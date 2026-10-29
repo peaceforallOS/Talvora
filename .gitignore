@@ -1,0 +1,22 @@
+# Dependencies (installed with npm ci / npm install)
+node_modules/
+
+# Build output and release files (published as GitHub release assets, never committed)
+dist/
+client/release/
+
+# Server runtime data: the server secret, panel password hash, TLS keys and certificates
+server/data/
+server/updates/
+
+# Private release signing key, should it ever be copied here (it belongs in ~/.videocall/)
+*release-key.pem
+!*release-key.pub.pem
+
+# Local tools and logs
+graphify-out/
+*.log
+npm-debug.log*
+.claude/
+.DS_Store
+Thumbs.db

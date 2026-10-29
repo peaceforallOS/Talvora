@@ -1,0 +1,85 @@
+{
+  "name": "videocall-client",
+  "version": "1.2.0",
+  "description": "Cross-Platform Video Call Application for Windows & Linux",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node test/clientCore.test.js && node test/chat.test.js && node test/music.test.js && node test/invite_workflow.test.js && node test/connection.test.js && node test/serverHistory.test.js && node test/networkAccess.test.js && node test/linuxLauncher.test.js && node test/nativeDialogs.test.js && node test/updater.test.js",
+    "dist:win": "electron-builder --win nsis --x64",
+    "dist:linux": "electron-builder --linux AppImage --x64"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^26.18.0"
+  },
+  "author": "VideoCall",
+  "build": {
+    "appId": "com.videocall.client",
+    "productName": "VideoCall",
+    "copyright": "VideoCall",
+    "afterPack": "build/afterPack.js",
+    "files": [
+      "main.js",
+      "preload.js",
+      "linuxIntegration.js",
+      "firewall.js",
+      "updater.js",
+      "release-key.pub.pem",
+      "icons/**/*",
+      "src/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "artifactName": "VideoCall-Setup.exe",
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "VideoCall",
+      "runAfterFinish": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "include": "build/installer.nsh",
+      "deleteAppDataOnUninstall": false
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "icons",
+      "category": "Network",
+      "executableName": "videocall",
+      "syncDesktopName": true
+    },
+    "appImage": {
+      "artifactName": "VideoCall.AppImage"
+    },
+    "toolsets": {
+      "appimage": "1.0.3"
+    }
+  },
+  "desktopName": "videocall.desktop"
+}

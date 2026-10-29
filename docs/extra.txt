@@ -1,0 +1,45 @@
+================================================================================
+VIDEO CALL APPLICATION — ADDITIONAL FEATURES (extra.txt)
+================================================================================
+
+In accordance with instruction 8 of the project specifications, the following
+extra features have been added to the application to enhance usability, 
+security, performance, and overall user experience while keeping the system 
+simple and elegant:
+
+1. Real-time Audio Level & Speaking Indicators
+   - Description: Active speakers are highlighted with an animated visual audio 
+     meter on their video tile and participant list item. This helps room members
+     immediately identify who is speaking, even in larger calls or when cameras are 
+     turned off.
+
+2. Screen Sharing Capability
+   - Description: Participants can share their entire desktop screen or a specific 
+     application window with other room participants through the relay server. 
+     The screen share stream is seamlessly integrated into the video grid layout.
+
+3. Live Connection Quality & Latency Diagnostics
+   - Description: Real-time network statistics indicator (RTT/ping, packet loss, 
+     and relay connection status) displayed unobtrusively in the status bar so 
+     users can diagnose poor local network conditions.
+
+4. Chat Message Delivery & Timestamp Formatting
+   - Description: All chat messages (public, direct, and group) feature localized 
+     timestamps, delivery acknowledgments, and clear visual separation with 
+     distinct badges distinguishing Public, Private (1-to-1), and Group messages.
+
+5. Client Device Selector & Live Previews
+   - Description: Before or during a call, users can easily select their desired 
+     camera and microphone from a clean settings dropdown, featuring a live mic test 
+     meter and video preview window.
+
+6. Synchronized Music Playback Progress & Scrubbing
+   - Description: When a user plays music, playback timing and track progress are 
+     continuously synchronized across all clients so all participants hear the audio 
+     in sync. The active DJ or Admin can seek/scrub through the track.
+
+7. Search & Filter in Participant Directory
+   - Description: A quick search bar within the user management panel and in-app 
+     participant list allows instant lookup of users in large rooms to easily manage 
+     permissions or initiate 1-to-1 chats.
+================================================================================

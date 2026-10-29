@@ -1,0 +1,17 @@
+{
+  "name": "videocall-server",
+  "version": "1.2.0",
+  "description": "Video Call Application - Linux Server Edition & Relay Backend",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "reset-password": "node src/resetAdminPassword.js",
+    "test": "node test/server.test.js && node test/admin_panel.test.js && node test/hardening.test.js && node test/turn.test.js && node test/certManager.test.js && node test/portAccess.test.js && node test/releases.test.js"
+  },
+  "dependencies": {
+    "acme-client": "^5.4.0",
+    "node-forge": "^1.4.1",
+    "node-turn": "^0.0.6",
+    "ws": "^8.18.0"
+  }
+}
