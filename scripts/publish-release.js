@@ -4,15 +4,17 @@
  * signed manifest) as a GitHub release of the Talvora repository. Installed apps and servers check
  * the latest release and offer it as an update.
  *
- *   GITHUB_TOKEN=<token> node scripts/publish-release.js [--notes-file notes.md] [--dir dist/release]
+ *   node scripts/publish-release.js [--notes-file notes.md] [--dir dist/release]
  *
- * The token needs "Contents: read and write" on the repository (a fine-grained token is enough). It
- * is only read from the environment and never written anywhere. Push the release's commit first:
- * the release tag is created on the repository's default branch.
+ * Signs in to GitHub with GITHUB_TOKEN if set (needs "Contents: read and write" on the repository),
+ * otherwise with the GitHub login git already uses for pushing (`git credential fill`, e.g. Git
+ * Credential Manager). The token stays inside this process: never printed or written anywhere.
+ * Push the release's commit first: the release tag is created on the repository's default branch.
  */
 
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 const REPO = 'peaceforallOS/Talvora';
 const API = `https://api.github.com/repos/${REPO}`;
@@ -21,7 +23,15 @@ const ASSETS = ['VideoCall-Setup.exe', 'VideoCall.AppImage', 'videocall-server.t
 const args = process.argv.slice(2);
 const option = name => (args.indexOf(name) >= 0 ? args[args.indexOf(name) + 1] : null);
 const dir = path.resolve(option('--dir') || path.join(__dirname, '..', 'dist', 'release'));
-const token = process.env.GITHUB_TOKEN;
+
+// The login git uses for github.com (may open the browser sign-in once)
+function gitCredentialToken() {
+  const result = spawnSync('git', ['credential', 'fill'], { input: 'protocol=https\nhost=github.com\n\n', encoding: 'utf8', stdio: ['pipe', 'pipe', 'inherit'] });
+  const line = result.status === 0 && result.stdout.split('\n').find(l => l.startsWith('password='));
+  return line ? line.slice('password='.length).trim() : null;
+}
+
+const token = process.env.GITHUB_TOKEN || gitCredentialToken();
 
 function fail(message) {
   console.error(message);
@@ -38,7 +48,7 @@ async function github(url, init = {}) {
 }
 
 async function main() {
-  if (!token) fail('Set GITHUB_TOKEN to a token that may write to the repository (see the top of this file).');
+  if (!token) fail('No GitHub login found: sign in with `git push` once, or set GITHUB_TOKEN (see the top of this file).');
   for (const name of ASSETS) {
     if (!fs.existsSync(path.join(dir, name))) fail(`Missing ${name} in ${dir}: run scripts/package-deliverables.sh first.`);
   }
@@ -49,7 +59,7 @@ async function main() {
 
   const existing = await github(`${API}/releases/tags/${tag}`);
   if (existing.res.ok) fail(`Release ${tag} already exists: ${existing.body.html_url}. Raise the version for a new release.`);
-  if (existing.res.status === 401 || existing.res.status === 403) fail('GitHub refused the token (check it is valid and may write to the repository).');
+  if (existing.res.status === 401 || existing.res.status === 403) fail('GitHub refused the login (it must be allowed to write to the repository).');
 
   const created = await github(`${API}/releases`, {
     method: 'POST',
