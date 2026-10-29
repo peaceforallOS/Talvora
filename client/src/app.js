@@ -1124,6 +1124,90 @@
     .filter(Boolean)
     .map(enhanceSelect);
 
+  // --- Server calculator: what server to rent for a given use (model in serverSizing.js) ---
+  const modalCalculator = document.getElementById('modal-calculator');
+  const calcForm = document.getElementById('calc-form');
+  const calcField = id => document.getElementById(`calc-${id}`);
+  ['quality', 'screens', 'network', 'music'].forEach(id => enhanceSelect(calcField(id)));
+
+  function formatTraffic(gb) {
+    if (gb >= 1000) return `${Math.round(gb / 100) / 10} TB`;
+    return `${Math.max(1, Math.round(gb))} GB`;
+  }
+
+  function formatSpeed(mbps) {
+    return mbps >= 1000 ? `${mbps / 1000} Gbit/s` : `${mbps} Mbit/s`;
+  }
+
+  function renderCalculator() {
+    const participants = Number(calcField('participants').value);
+    const camerasInput = calcField('cameras');
+    camerasInput.max = String(Math.max(0, participants));
+    const music = calcField('music').value;
+    document.getElementById('calc-music-size-group').classList.toggle('hidden', music === 'none');
+
+    const result = ServerSizing.estimateServer({
+      participants,
+      cameras: Number(camerasInput.value),
+      screenShares: Number(calcField('screens').value),
+      videoQuality: calcField('quality').value,
+      network: calcField('network').value,
+      music,
+      musicFileMb: Number(calcField('music-size').value),
+      hoursPerMonth: Number(calcField('hours').value)
+    });
+    const { recommendation: rec, load, perParticipant } = result;
+
+    const verdict = document.getElementById('calc-verdict');
+    verdict.dataset.state = result.fits ? 'ok' : 'bad';
+    verdict.textContent = result.fits ? 'Recommended server' : 'Not workable as one call (see below)';
+
+    const specs = document.getElementById('calc-specs');
+    specs.dataset.state = result.fits ? 'ok' : 'bad';
+    specs.innerHTML = [
+      ['Processor', `${rec.vcpu} vCPU`, rec.cpuNote],
+      ['Memory', `${rec.ramGb} GB RAM`, 'any Linux VPS plan'],
+      ['Network', formatSpeed(rec.linkMbps), 'port speed'],
+      ['Traffic', `${formatTraffic(rec.monthlyTrafficGb)} / month`, 'outgoing'],
+      ['Storage', `${rec.diskGb} GB SSD`, 'system, app and logs'],
+      ['System', 'Ubuntu / Debian', 'any 64-bit Linux works']
+    ].map(([label, value, note]) => `
+      <div class="calc-spec">
+        <span class="calc-spec-label">${escapeHtml(label)}</span>
+        <span class="calc-spec-value">${escapeHtml(value)}</span>
+        <span class="calc-spec-note">${escapeHtml(note)}</span>
+      </div>`).join('');
+
+    const fill = document.getElementById('calc-load-fill');
+    fill.style.width = `${Math.min(100, load.corePct)}%`;
+    fill.dataset.level = load.corePct > 85 ? 'bad' : load.corePct > 60 ? 'warn' : 'ok';
+    document.getElementById('calc-load-value').textContent = `${load.corePct > 999 ? '>999' : load.corePct}%`;
+
+    document.getElementById('calc-details').innerHTML = [
+      ['Relayed through the server', `${load.relayMbps} Mbit/s each way (${load.relayedShare}% of connections)`],
+      ['Server upload, typical', `${load.uploadMbps} Mbit/s`],
+      ['Each camera user needs', `${perParticipant.cameraUploadMbps} Mbit/s upload`],
+      ['Each participant needs', `${perParticipant.downloadMbps} Mbit/s download`]
+    ].map(([label, value]) => `<li><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></li>`).join('');
+
+    document.getElementById('calc-warnings').innerHTML = result.warnings
+      .map(w => `<li data-level="${w.level}">${escapeHtml(w.text)}</li>`).join('');
+  }
+
+  calcForm.addEventListener('input', renderCalculator);
+  calcForm.addEventListener('change', renderCalculator);
+  calcForm.addEventListener('submit', e => e.preventDefault());
+
+  document.getElementById('btn-open-calculator').addEventListener('click', () => {
+    renderCalculator();
+    modalCalculator.classList.remove('hidden');
+    calcField('participants').focus();
+  });
+
+  document.getElementById('btn-close-calculator').addEventListener('click', () => {
+    modalCalculator.classList.add('hidden');
+  });
+
   async function populateDeviceList() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
     try {
@@ -1166,6 +1250,7 @@
   window.addEventListener('keydown', e => {
     // Leave browser shortcuts (Ctrl+C, Cmd+V, ...) alone; call shortcuts only apply inside a room
     if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key === 'Escape') modalCalculator.classList.add('hidden'); // opened from the join screen
     if (screenRoom.classList.contains('hidden')) return;
 
     // Ignore shortcuts when user is typing in chat or input

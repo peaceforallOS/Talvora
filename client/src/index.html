@@ -97,6 +97,9 @@
           <svg class="icon"><use href="#i-shield"/></svg>
           <span>Links are cryptographically bound to your username</span>
         </div>
+        <button id="btn-open-calculator" class="link-button" type="button">
+          <svg class="icon"><use href="#i-server"/></svg>Planning a server? Find out what to rent
+        </button>
       </div>
 
       <aside id="server-history" class="history-card hidden" aria-labelledby="server-history-title">
@@ -325,6 +328,94 @@
       </div>
     </div>
 
+    <!-- Modal: Server calculator (model in serverSizing.js) -->
+    <div id="modal-calculator" class="modal-overlay hidden">
+      <div class="modal-card modal-card-wide">
+        <div class="modal-header">
+          <div class="modal-icon"><svg class="icon"><use href="#i-server"/></svg></div>
+          <div>
+            <h2>Server calculator</h2>
+            <p>Describe your calls and see what server to rent.</p>
+          </div>
+        </div>
+
+        <div class="calc-layout">
+          <form id="calc-form" class="calc-inputs" autocomplete="off">
+            <div class="calc-row">
+              <div class="form-group">
+                <label for="calc-participants">People in a call</label>
+                <input type="number" id="calc-participants" min="2" max="5000" value="8">
+              </div>
+              <div class="form-group">
+                <label for="calc-cameras">With camera on</label>
+                <input type="number" id="calc-cameras" min="0" max="5000" value="4">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="calc-quality">Video quality</label>
+              <select id="calc-quality" class="device-select" data-icon="video">
+                <option value="low">Low (360p)</option>
+                <option value="standard" selected>Standard (720p)</option>
+                <option value="high">High (720p, sharp)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="calc-screens">Sharing their screen at the same time</label>
+              <select id="calc-screens" class="device-select" data-icon="screen">
+                <option value="0" selected>Nobody</option>
+                <option value="1">One person</option>
+                <option value="2">Two people</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="calc-network">Where people join from</label>
+              <select id="calc-network" class="device-select" data-icon="globe">
+                <option value="lan">Same local network as the server</option>
+                <option value="home" selected>Mostly homes and mobile</option>
+                <option value="mixed">Mixed homes and offices</option>
+                <option value="strict">Mostly offices, schools, strict firewalls</option>
+              </select>
+              <span class="field-hint">Strict networks block direct connections, so the server relays their audio and video.</span>
+            </div>
+            <div class="calc-row">
+              <div class="form-group">
+                <label for="calc-music">Music</label>
+                <select id="calc-music" class="device-select" data-icon="music">
+                  <option value="none" selected>No music</option>
+                  <option value="sometimes">Sometimes</option>
+                  <option value="often">Often</option>
+                </select>
+              </div>
+              <div class="form-group" id="calc-music-size-group">
+                <label for="calc-music-size">Song size (MB)</label>
+                <input type="number" id="calc-music-size" min="1" max="18" value="8">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="calc-hours">Hours of calls per month</label>
+              <input type="number" id="calc-hours" min="0" max="744" value="40">
+            </div>
+          </form>
+
+          <div class="calc-results" aria-live="polite">
+            <div id="calc-verdict" class="calc-verdict"></div>
+            <div id="calc-specs" class="calc-specs"></div>
+            <div class="calc-load">
+              <div class="calc-load-label"><span>Load on the server's main CPU core</span><span id="calc-load-value"></span></div>
+              <div class="meter-track"><div id="calc-load-fill" class="meter-fill"></div></div>
+            </div>
+            <ul id="calc-details" class="calc-details"></ul>
+            <ul id="calc-warnings" class="calc-warnings"></ul>
+            <p class="field-hint">Estimates from measured load tests and typical WebRTC figures. Rent a little more if you expect to grow.</p>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button id="btn-close-calculator" class="btn btn-primary">Done</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Modal: Leave confirmation. In-app on purpose: after a native alert()/confirm(), Electron on
          Windows stops passing keystrokes to text fields until the window is refocused. -->
     <div id="modal-leave" class="modal-overlay hidden">
@@ -467,6 +558,7 @@
 
   <script src="serverHistory.js"></script>
   <script src="connectionCheck.js"></script>
+  <script src="serverSizing.js"></script>
   <script src="mediaEngine.js"></script>
   <script src="clientCore.js"></script>
   <script src="chat.js"></script>

@@ -234,6 +234,17 @@ Each user entity in the room state contains a `permissions` object:
   `start-server.sh` puts first on `PATH`; system packages are not changed. curl is installed first if neither curl
   nor wget exists.
 
+### Server calculator
+The join screen's "Planning a server?" opens a calculator (`client/src/serverSizing.js`, tested in
+`client/test/serverSizing.test.js`). Inputs: people per call, cameras on, video quality, screen sharing, where people
+join from (share of connections that need the TURN relay: LAN 0%, homes 10%, mixed 20%, strict networks 40%), music
+use and song size, hours per month. Model: signaling CPU interpolated from `docs/load-test-report.md`; relayed media =
+relay share x full-mesh streams (audio 0.05, video 0.5 / 1.5 / 2.5, screen 1.5 Mbit/s per stream), relay CPU from
+packets per second (estimated 60k pps per core); everything on one core (single-threaded process), so at most 2 vCPU
+is recommended; music sends the song (base64) to every participant per play/pause/seek and buffers it once per
+participant. Calls with more than ~26 people or more than 8 cameras are reported as not workable (mesh limit on the
+participants' side) instead of being sized.
+
 ### Updates (GitHub releases)
 New versions are published as releases of https://github.com/peaceforallOS/Talvora (public). Apps and servers
 check the latest release; they trust it only if its manifest is signed with the release key.
@@ -267,7 +278,7 @@ Video_Call_88/
 │   ├── release-key.pub.pem     # Public release key: updates must be signed with its private half
 │   ├── linuxIntegration.js     # AppImage icon, menu entry and file icon on Linux
 │   ├── icons/                  # App icon sizes (16-512 px)
-│   ├── src/                    # UI: index.html, app.js, chat.js, clientCore.js, mediaEngine.js, serverHistory.js, style.css
+│   ├── src/                    # UI: index.html, app.js, chat.js, clientCore.js, mediaEngine.js, serverHistory.js, serverSizing.js, style.css
 │   │   └── vendor/rnnoise/     # RNNoise noise suppression worklet (MIT)
 │   ├── build/                  # Build resources: app icons, afterPack.js and linux-launcher.sh (installs
 │   │                           #   missing system libraries before the Linux app starts)

@@ -6,6 +6,7 @@ Private, self-hosted video calls for Windows and Linux. You run the server; only
 - **Personal invite links:** each link only works for the name it was made for; links can be revoked
 - **In the call:** voice, video, screen sharing, public / direct / group chat, music everyone hears in sync
 - **Management panel:** live permissions (audio, video, chat, music, invite), kick and remove, network and port diagnostics
+- **Server calculator** (on the app's join screen): enter people, cameras, video quality, screen sharing, networks, music and hours per month; get the CPU, RAM, port speed and monthly traffic to rent, based on measured load tests
 - **Updates:** apps and servers notice new [releases](https://github.com/peaceforallOS/Talvora/releases) by themselves; every release is signed and checked before it is installed
 
 ## Download
