@@ -1,0 +1,7 @@
+{
+  "name": "log4js",
+  "version": "0.0.0-unused",
+  "description": "Empty stand-in: node-turn lists log4js for its own command-line starter, which this server never runs",
+  "main": "index.js",
+  "private": true
+}

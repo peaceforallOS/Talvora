@@ -1,4 +1,4 @@
-# Dependencies (installed with npm ci / npm install)
+﻿# Dependencies (installed with npm ci / npm install)
 node_modules/
 
 # Build output and release files (published as GitHub release assets, never committed)
@@ -20,3 +20,5 @@ npm-debug.log*
 .claude/
 .DS_Store
 Thumbs.db
+# Office lock files (they hold the editor's name)
+~$*

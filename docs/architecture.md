@@ -300,6 +300,8 @@ Video_Call_88/
 ├── server/                     # Linux server edition & relay
 │   ├── src/                    # index.js (HTTP(S) + WebSocket), auth.js, adminSession.js, certManager.js, portAccess.js, releases.js, roomManager.js, turnServer.js
 │   ├── public/                 # Admin management panel
+│   ├── stubs/                  # Empty stand-ins for log4js and js-yaml: node-turn lists them only for its own
+│   │                           #   command-line starter, which the server never runs (see "overrides" in package.json)
 │   ├── test/                   # Server tests (npm test)
 │   ├── data/                   # Runtime config incl. the server secret (created on first start)
 │   ├── install-server.sh       # Linux server installer

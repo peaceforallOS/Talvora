@@ -159,7 +159,7 @@ echo ">> Packaging Deliverable 3: Linux Server Installer..."
 SERVER_BUNDLE="${DIST_DIR}/server"
 mkdir -p "${SERVER_BUNDLE}/server" "${SERVER_BUNDLE}/client"
 cp "${PROJECT_ROOT}/server/install-server.sh" "${SERVER_BUNDLE}/"
-cp -r "${PROJECT_ROOT}/server/src" "${PROJECT_ROOT}/server/public" \
+cp -r "${PROJECT_ROOT}/server/src" "${PROJECT_ROOT}/server/public" "${PROJECT_ROOT}/server/stubs" \
   "${PROJECT_ROOT}/server/package.json" "${PROJECT_ROOT}/server/package-lock.json" "${SERVER_BUNDLE}/server/"
 cp -r "${PROJECT_ROOT}/shared" "${SERVER_BUNDLE}/"
 cp -r "${PROJECT_ROOT}/client/src" "${SERVER_BUNDLE}/client/"

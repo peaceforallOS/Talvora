@@ -159,7 +159,7 @@ echo -e "\n${YELLOW}>> Deploying server files to ${INSTALL_DIR}...${NC}"
 mkdir -p "${INSTALL_DIR}"
 # Never copy data/ (it holds this machine's server secret and would overwrite an existing
 # install's config) or node_modules/ (dependencies are installed fresh below)
-for item in src public package.json package-lock.json; do
+for item in src public stubs package.json package-lock.json; do
   if [ -e "${SERVER_SRC}/${item}" ]; then
     rm -rf "${INSTALL_DIR:?}/${item}"
     cp -r "${SERVER_SRC}/${item}" "${INSTALL_DIR}/"

@@ -10,8 +10,16 @@
   },
   "dependencies": {
     "acme-client": "^5.4.0",
+    "js-yaml": "file:stubs/js-yaml",
+    "log4js": "file:stubs/log4js",
     "node-forge": "^1.4.1",
     "node-turn": "^0.0.6",
     "ws": "^8.18.0"
+  },
+  "overrides": {
+    "node-turn": {
+      "log4js": "$log4js",
+      "js-yaml": "$js-yaml"
+    }
   }
 }

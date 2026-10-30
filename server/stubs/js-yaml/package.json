@@ -1,0 +1,7 @@
+{
+  "name": "js-yaml",
+  "version": "0.0.0-unused",
+  "description": "Empty stand-in: node-turn lists js-yaml for its own command-line starter, which this server never runs",
+  "main": "index.js",
+  "private": true
+}
