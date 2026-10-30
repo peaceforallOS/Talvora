@@ -7,8 +7,8 @@ Users never need this: they download the files from the [releases page](https://
    ```bash
    cd client && node node_modules/electron-builder/cli.js --win nsis --x64
    ```
-   Then copy `client/release/VideoCall-Setup.exe` to `dist/windows/`. (The Windows installer must be built on Windows.)
-3. On Linux or WSL, with `dist/windows/VideoCall-Setup.exe` present and `VIDEOCALL_RELEASE_KEY` pointing at the private release key:
+   Then copy `client/release/Talvora-Setup.exe` to `dist/windows/`. (The Windows installer must be built on Windows.)
+3. On Linux or WSL, with `dist/windows/Talvora-Setup.exe` present and `VIDEOCALL_RELEASE_KEY` pointing at the private release key:
    ```bash
    scripts/package-deliverables.sh
    ```

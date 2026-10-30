@@ -38,7 +38,7 @@ fi
 
 if want linux; then
 # --- 1. Package Linux Client ---
-# A single VideoCall.AppImage (Electron + app bundled; double-click to run, no install).
+# A single Talvora.AppImage (Electron + app bundled; double-click to run, no install).
 # package.json selects the static AppImage runtime, which needs no libfuse2 (missing on
 # current Ubuntu/Fedora). main.js handles the Chromium sandbox, so nothing asks for sudo.
 echo ">> Packaging Deliverable 1: Linux Client..."
@@ -66,44 +66,44 @@ APPIMAGE_TOOLS_PATH="${APPIMAGE_TOOLS}" npx electron-builder --linux AppImage --
   exit 1
 }
 [ -n "${APPIMAGE_TOOLS}" ] && rm -rf "${APPIMAGE_TOOLS}"
-cp release/VideoCall.AppImage "${LINUX_DIR}/VideoCall.AppImage"
-chmod +x "${LINUX_DIR}/VideoCall.AppImage"
+cp release/Talvora.AppImage "${LINUX_DIR}/Talvora.AppImage"
+chmod +x "${LINUX_DIR}/Talvora.AppImage"
 rm -rf release "${DIST_DIR}/linux-build.log"
 
 cat > "${LINUX_DIR}/README-LINUX.txt" << 'EOF'
 ================================================================================
-VIDEO CALL APPLICATION — LINUX CLIENT
+TALVORA — LINUX CLIENT
 ================================================================================
 
 HOW TO RUN:
-1. Double-click VideoCall.AppImage. No installation, terminal or password needed.
+1. Double-click Talvora.AppImage. No installation, terminal or password needed.
    (If your file manager does not start it: right-click -> Properties ->
    Permissions -> enable "Allow executing file as program".)
 2. Enter your username and the join link provided by the admin.
 3. Click "Join Room" to begin your call.
 
 To pass a join link directly from a terminal:
-   ./VideoCall.AppImage "http://<server-ip>:8080/join?room=main-room&user=Omid&token=..."
+   ./Talvora.AppImage "http://<server-ip>:8080/join?room=main-room&user=Omid&token=..."
 
 SYSTEM REQUIREMENTS:
 - Any 64-bit Linux distribution (Ubuntu, Debian, Fedora, openSUSE, Arch, ...).
 - Microphone and webcam (optional for listening/viewing only).
-- Missing system libraries are detected when VideoCall starts: it asks, then installs them
+- Missing system libraries are detected when Talvora starts: it asks, then installs them
   with your package manager (apt, dnf, zypper or pacman; your password is required once).
 
 UPDATES:
-- When your VideoCall server has a newer version, the app shows it after you join a room.
+- When your Talvora server has a newer version, the app shows it after you join a room.
   Click "Install": it downloads, checks the update's signature, replaces this AppImage file
   and restarts. (Keep the AppImage in a folder you can write to, e.g. ~/Apps.)
 ================================================================================
 EOF
-echo "✓ Linux client packaged: ${LINUX_DIR}/VideoCall.AppImage"
+echo "✓ Linux client packaged: ${LINUX_DIR}/Talvora.AppImage"
 fi
 
 
 if want windows; then
 # --- 2. Package Windows Client ---
-# VideoCall-Setup.exe: installs once for the current Windows user (no administrator password), then
+# Talvora-Setup.exe: installs once for the current Windows user (no administrator password), then
 # starts in about a second. (A portable .exe unpacked ~270 MB on every launch, ~14 s each time.)
 # Built on Windows: electron-builder's Windows launchers built on Linux do not work.
 echo ">> Packaging Deliverable 2: Windows Client..."
@@ -113,25 +113,25 @@ npx electron-builder --win nsis --x64 > "${DIST_DIR}/windows-build.log" 2>&1 || 
   echo "Windows build failed; see ${DIST_DIR}/windows-build.log"
   exit 1
 }
-cp release/VideoCall-Setup.exe "${WIN_DIR}/VideoCall-Setup.exe"
+cp release/Talvora-Setup.exe "${WIN_DIR}/Talvora-Setup.exe"
 rm -rf release "${DIST_DIR}/windows-build.log"
 
 cat > "${WIN_DIR}/README-WINDOWS.txt" << 'EOF'
 ================================================================================
-VIDEO CALL APPLICATION — WINDOWS CLIENT
+TALVORA — WINDOWS CLIENT
 ================================================================================
 
 HOW TO INSTALL AND RUN:
-1. Double-click VideoCall-Setup.exe and follow the steps:
+1. Double-click Talvora-Setup.exe and follow the steps:
    - "Only for me" (no administrator password) or "Anyone who uses this computer"
    - the installation folder
    - desktop and Start menu shortcuts
-   - "Run VideoCall" on the last page
-2. Afterwards, start VideoCall from the Start menu or the desktop shortcut.
+   - "Run Talvora" on the last page
+2. Afterwards, start Talvora from the Start menu or the desktop shortcut.
 3. Enter your username and the join link provided by the admin, then click "Join Room".
 
 UPDATES:
-- When your VideoCall server has a newer version, the app shows it after you join a
+- When your Talvora server has a newer version, the app shows it after you join a
   room. Click "Install": it downloads, checks the update's signature, installs it in the
   same place and restarts. Nothing else is needed.
 
@@ -139,15 +139,15 @@ NOTES:
 - The app is not code-signed, so Windows SmartScreen may show
   "Windows protected your PC". Click "More info" -> "Run anyway".
 - Allow camera and microphone access if Windows asks.
-- You can also update by running a newer VideoCall-Setup.exe; settings and recent servers are kept.
-- To uninstall: Settings -> Apps -> Installed apps -> VideoCall -> Uninstall.
+- You can also update by running a newer Talvora-Setup.exe; settings and recent servers are kept.
+- To uninstall: Settings -> Apps -> Installed apps -> Talvora -> Uninstall.
 
 SYSTEM REQUIREMENTS:
 - Windows 10 or Windows 11 (64-bit).
 - Microphone and webcam (optional for listening/viewing only).
 ================================================================================
 EOF
-echo "✓ Windows client packaged: ${WIN_DIR}/VideoCall-Setup.exe"
+echo "✓ Windows client packaged: ${WIN_DIR}/Talvora-Setup.exe"
 fi
 
 
@@ -173,22 +173,22 @@ echo "✓ Server installer packaged: ${SERVER_BUNDLE} (single file: ${DIST_DIR}/
 # servers install only signed releases. Build the Windows installer on Windows first.
 RELEASE_DIR="${DIST_DIR}/release"
 rm -rf "${RELEASE_DIR}"
-if [ -f "${DIST_DIR}/windows/VideoCall-Setup.exe" ] && [ -f "${DIST_DIR}/linux/VideoCall.AppImage" ]; then
+if [ -f "${DIST_DIR}/windows/Talvora-Setup.exe" ] && [ -f "${DIST_DIR}/linux/Talvora.AppImage" ]; then
   mkdir -p "${RELEASE_DIR}"
-  cp "${DIST_DIR}/windows/VideoCall-Setup.exe" "${DIST_DIR}/linux/VideoCall.AppImage" "${DIST_DIR}/videocall-server.tar.gz" "${RELEASE_DIR}/"
+  cp "${DIST_DIR}/windows/Talvora-Setup.exe" "${DIST_DIR}/linux/Talvora.AppImage" "${DIST_DIR}/videocall-server.tar.gz" "${RELEASE_DIR}/"
   node "${PROJECT_ROOT}/scripts/sign-updates.js" "${RELEASE_DIR}" || {
     echo "Release not signed (needs the release key, see scripts/sign-updates.js)."
     rm -rf "${RELEASE_DIR}"
   }
 else
-  echo "Note: no release files (needs dist/windows/VideoCall-Setup.exe from a Windows build and the Linux client)."
+  echo "Note: no release files (needs dist/windows/Talvora-Setup.exe from a Windows build and the Linux client)."
 fi
 fi
 
 echo -e "\n========================================================"
 echo " PACKAGED:${TARGETS}"
-want windows && echo " Windows Client:   ${DIST_DIR}/windows/VideoCall-Setup.exe"
-want linux && echo " Linux Client:     ${DIST_DIR}/linux/VideoCall.AppImage"
+want windows && echo " Windows Client:   ${DIST_DIR}/windows/Talvora-Setup.exe"
+want linux && echo " Linux Client:     ${DIST_DIR}/linux/Talvora.AppImage"
 want server && echo " Server Installer: ${DIST_DIR}/videocall-server.tar.gz (or ${DIST_DIR}/server/install-server.sh)"
 echo " Build the other platform's deliverables there too, so all three stay in step."
 [ -d "${DIST_DIR}/release" ] && echo " Signed release:   ${DIST_DIR}/release (publish: node scripts/publish-release.js)"

@@ -5,7 +5,7 @@
  * show every AppImage with a generic icon. On launch from an AppImage this installs, for the
  * current user only (no root needed):
  *  - the icon set into ~/.local/share/icons/hicolor
- *  - a "VideoCall" menu entry pointing at the AppImage, matched to the running window
+ *  - a "Talvora" menu entry pointing at the AppImage, matched to the running window
  *  - the camera icon on the AppImage file itself (file manager)
  * Everything is refreshed on each launch, so moving the AppImage keeps it working.
  */
@@ -54,13 +54,13 @@ function integrateAppImage(appRoot) {
   const entry = [
     '[Desktop Entry]',
     'Type=Application',
-    'Name=VideoCall',
+    'Name=Talvora',
     'Comment=Secure voice, video & chat calls',
     `Exec=${quoteExec(appImage)} %U`,
     `Icon=${APP_ID}`,
     'Terminal=false',
     'Categories=Network;InstantMessaging;VideoConference;',
-    'Keywords=video;call;meeting;chat;',
+    'Keywords=talvora;video;call;meeting;chat;',
     `StartupWMClass=${WINDOW_CLASS}`,
     ''
   ].join('\n');

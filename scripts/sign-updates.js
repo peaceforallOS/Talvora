@@ -8,7 +8,7 @@
  *       creates the release key (private: ~/.videocall/release-key.pem, keep it safe and backed up;
  *       public: client/release-key.pub.pem + shared/release-key.pub.pem, built into app and server)
  *   node scripts/sign-updates.js <release-dir> [--version x.y.z]
- *       writes manifest.json + manifest.sig for VideoCall-Setup.exe / VideoCall.AppImage /
+ *       writes manifest.json + manifest.sig for Talvora-Setup.exe / Talvora.AppImage /
  *       videocall-server.tar.gz found in <release-dir>; the version defaults to client/package.json's
  *
  * VIDEOCALL_RELEASE_KEY overrides the private key's path.
@@ -23,7 +23,7 @@ const ROOT = path.join(__dirname, '..');
 const PUBLIC_KEY_FILE = path.join(ROOT, 'client', 'release-key.pub.pem');
 const SHARED_KEY_FILE = path.join(ROOT, 'shared', 'release-key.pub.pem'); // the server's copy
 const PRIVATE_KEY_FILE = process.env.VIDEOCALL_RELEASE_KEY || path.join(os.homedir(), '.videocall', 'release-key.pem');
-const PACKAGES = { win32: 'VideoCall-Setup.exe', linux: 'VideoCall.AppImage', server: 'videocall-server.tar.gz' };
+const PACKAGES = { win32: 'Talvora-Setup.exe', linux: 'Talvora.AppImage', server: 'videocall-server.tar.gz' };
 
 function generateKey() {
   if (fs.existsSync(PRIVATE_KEY_FILE)) {

@@ -20,13 +20,13 @@
     ${If} ${isUpdated}
       Abort
     ${EndIf}
-    !insertmacro MUI_HEADER_TEXT "Shortcuts" "Choose where VideoCall should appear."
+    !insertmacro MUI_HEADER_TEXT "Shortcuts" "Choose where Talvora should appear."
     nsDialogs::Create 1018
     Pop $0
     ${NSD_CreateCheckbox} 0 10u 100% 12u "Create a &desktop shortcut"
     Pop $vcDesktopBox
     ${NSD_Check} $vcDesktopBox
-    ${NSD_CreateCheckbox} 0 30u 100% 12u "Add VideoCall to the &Start menu"
+    ${NSD_CreateCheckbox} 0 30u 100% 12u "Add Talvora to the &Start menu"
     Pop $vcStartMenuBox
     ${NSD_Check} $vcStartMenuBox
     nsDialogs::Show
@@ -46,7 +46,7 @@
   ${EndIf}
   ${If} $vcStartMenuShortcut == "0"
     Delete "$newStartMenuLink"
-    ; "Run VideoCall" on the last page used the Start menu shortcut
+    ; "Run Talvora" on the last page used the Start menu shortcut
     StrCpy $launchLink "$INSTDIR\${APP_EXECUTABLE_FILENAME}"
   ${EndIf}
 !macroend

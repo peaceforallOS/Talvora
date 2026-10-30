@@ -1,12 +1,12 @@
 /**
- * Local Firewall — finds out whether this computer's firewall blocks VideoCall, and (with the
+ * Local Firewall — finds out whether this computer's firewall blocks Talvora, and (with the
  * user's permission, via the system's administrator prompt) allows it.
  *
  *  - Windows: Windows Firewall rules for this program (incoming: direct, faster calls; outgoing:
  *    in case outgoing traffic is restricted). Added through a UAC prompt.
  *  - Linux: ufw configured to block outgoing traffic is the case that stops calls; a rule for
  *    exactly the server's address and ports is added through a pkexec password prompt.
- * Other systems allow the connections VideoCall makes by default.
+ * Other systems allow the connections Talvora makes by default.
  */
 
 const fs = require('fs');
@@ -14,7 +14,8 @@ const dns = require('dns').promises;
 const net = require('net');
 const { execFile, spawn } = require('child_process');
 
-const RULE_NAME = 'VideoCall';
+const RULE_NAME = 'Talvora';
+const OLD_RULE_NAME = 'VideoCall'; // the app's earlier name; its rule points at an executable that no longer exists
 const HELPER_IDLE_MS = 2 * 60 * 1000;
 
 function run(file, args, options = {}) {
@@ -40,6 +41,7 @@ function windowsAllowCommand(exe) {
   const program = exe.replace(/"/g, '');
   const netsh = args => `netsh advfirewall firewall ${args}`;
   return [
+    netsh(`delete rule name="${OLD_RULE_NAME}"`),
     netsh(`delete rule name="${RULE_NAME}"`),
     netsh(`add rule name="${RULE_NAME}" dir=in action=allow program="${program}" enable=yes profile=any`),
     netsh(`add rule name="${RULE_NAME}" dir=out action=allow program="${program}" enable=yes profile=any`)
@@ -47,7 +49,7 @@ function windowsAllowCommand(exe) {
 }
 
 // The administrator prompt is opened through PowerShell, which takes 1-3 s just to start. So one is
-// started in advance (idle, not elevated) as soon as the firewall turns out to block VideoCall; when
+// started in advance (idle, not elevated) as soon as the firewall turns out to block Talvora; when
 // the user clicks "Allow" the prompt then appears at once. Unused helpers are closed after a while.
 let helper = null;
 
@@ -156,7 +158,7 @@ async function status() {
 }
 
 /**
- * Ask the system for permission and allow VideoCall. Resolves true when allowed.
+ * Ask the system for permission and allow Talvora. Resolves true when allowed.
  * @param {{host: string, ports: {protocol: string, port: number|string}[]}} server
  */
 async function allow(server) {

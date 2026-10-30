@@ -149,7 +149,7 @@ class UpnpGateway {
       NewInternalPort: port,
       NewInternalClient: this.localAddress,
       NewEnabled: 1,
-      NewPortMappingDescription: `VideoCall ${protocol} ${port}`,
+      NewPortMappingDescription: `Talvora ${protocol} ${port}`,
       NewLeaseDuration: lease
     };
     try {

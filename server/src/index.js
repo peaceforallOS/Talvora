@@ -1,5 +1,5 @@
 /**
- * Video Call Application — Linux Server Edition & Relay Backend
+ * Talvora — Linux Server Edition & Relay Backend
  */
 
 const http = require('http');
@@ -779,7 +779,7 @@ async function start() {
       : LOCAL_ONLY ? 'off (plain HTTP, reachable from this computer only)' : 'off (plain HTTP: NOT ENCRYPTED, ALLOW_INSECURE_HTTP=1)';
 
     console.log('\n' + '='.repeat(70));
-    console.log('       VIDEO CALL APPLICATION — LINUX SERVER EDITION STARTED       ');
+    console.log('       TALVORA — LINUX SERVER EDITION STARTED       ');
     console.log('='.repeat(70));
     console.log(` Version:                   Talvora server ${CURRENT_VERSION}${RELEASE_CHECK ? ' (checks GitHub for new releases)' : ''}`);
     console.log(` Status:                    ACTIVE & LISTENING on port ${LISTEN_PORT}`);

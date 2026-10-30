@@ -15,8 +15,8 @@ Private, self-hosted video calls for Windows and Linux. You run the server; only
 
 | File | For | How |
 |---|---|---|
-| `VideoCall-Setup.exe` | Windows 10/11 (64-bit) | Double-click and follow the steps: only for you (no admin password) or all users, folder, shortcuts |
-| `VideoCall.AppImage` | Any 64-bit Linux | Make it executable (right-click → Properties → Permissions, or `chmod +x VideoCall.AppImage`) and double-click. Missing system libraries are installed on first start, after asking |
+| `Talvora-Setup.exe` | Windows 10/11 (64-bit) | Double-click and follow the steps: only for you (no admin password) or all users, folder, shortcuts |
+| `Talvora.AppImage` | Any 64-bit Linux | Make it executable (right-click → Properties → Permissions, or `chmod +x Talvora.AppImage`) and double-click. Missing system libraries are installed on first start, after asking |
 | `videocall-server.tar.gz` | The server (Linux) | See below |
 
 Windows may say "Windows protected your PC" because the app is not code-signed: click **More info → Run anyway**.

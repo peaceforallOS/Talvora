@@ -18,7 +18,7 @@ const { spawnSync } = require('child_process');
 
 const REPO = 'peaceforallOS/Talvora';
 const API = `https://api.github.com/repos/${REPO}`;
-const ASSETS = ['VideoCall-Setup.exe', 'VideoCall.AppImage', 'videocall-server.tar.gz', 'manifest.json', 'manifest.sig'];
+const ASSETS = ['Talvora-Setup.exe', 'Talvora.AppImage', 'videocall-server.tar.gz', 'manifest.json', 'manifest.sig'];
 
 const args = process.argv.slice(2);
 const option = name => (args.indexOf(name) >= 0 ? args[args.indexOf(name) + 1] : null);
@@ -55,7 +55,7 @@ async function main() {
   const { version } = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
   const tag = `v${version}`;
   const notesFile = option('--notes-file');
-  const notes = notesFile ? fs.readFileSync(notesFile, 'utf8') : `Talvora ${version}\n\n- Windows: VideoCall-Setup.exe\n- Linux: VideoCall.AppImage\n- Server: videocall-server.tar.gz (or \`sudo videocall-server update\` on an installed server)\n\nInstalled apps offer this update by themselves.`;
+  const notes = notesFile ? fs.readFileSync(notesFile, 'utf8') : `Talvora ${version}\n\n- Windows: Talvora-Setup.exe\n- Linux: Talvora.AppImage\n- Server: videocall-server.tar.gz (or \`sudo videocall-server update\` on an installed server)\n\nInstalled apps offer this update by themselves.`;
 
   const existing = await github(`${API}/releases/tags/${tag}`);
   if (existing.res.ok) fail(`Release ${tag} already exists: ${existing.body.html_url}. Raise the version for a new release.`);

@@ -91,7 +91,7 @@ class ClientCore {
     if (!ClientCore.isSecureServer(host)) {
       this.onAuthError({
         code: 'ERR_INSECURE_SERVER',
-        message: 'This server does not use an encrypted (https://) connection, so VideoCall will not connect to it. Ask the administrator for an https:// join link.'
+        message: 'This server does not use an encrypted (https://) connection, so Talvora will not connect to it. Ask the administrator for an https:// join link.'
       });
       return;
     }

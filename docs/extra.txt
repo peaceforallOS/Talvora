@@ -1,5 +1,5 @@
 ================================================================================
-VIDEO CALL APPLICATION — ADDITIONAL FEATURES (extra.txt)
+TALVORA — ADDITIONAL FEATURES (extra.txt)
 ================================================================================
 
 In accordance with instruction 8 of the project specifications, the following

@@ -16,9 +16,9 @@ console.log('--- Starting Update Tests ---');
 
 // A stand-in release key; the real one never leaves the release machine
 const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
-const pkg = Buffer.from('pretend this is VideoCall-Setup.exe');
-const entry = { name: 'VideoCall-Setup.exe', size: pkg.length, sha256: crypto.createHash('sha256').update(pkg).digest('hex') };
-const manifestFor = (version, files = { win32: entry, linux: { ...entry, name: 'VideoCall.AppImage' } }) =>
+const pkg = Buffer.from('pretend this is Talvora-Setup.exe');
+const entry = { name: 'Talvora-Setup.exe', size: pkg.length, sha256: crypto.createHash('sha256').update(pkg).digest('hex') };
+const manifestFor = (version, files = { win32: entry, linux: { ...entry, name: 'Talvora.AppImage' } }) =>
   JSON.stringify({ version, released: '2026-10-29T00:00:00Z', files }, null, 2);
 const signed = text => crypto.sign(null, Buffer.from(text), privateKey).toString('base64');
 const check = (text, signature, currentVersion = '1.1.0', platform = 'win32') =>
@@ -34,8 +34,8 @@ console.log('✓ Test 1 Passed: Only strictly newer x.y.z versions count');
 
 // 2. A validly signed, newer manifest yields the package for this system
 const v2 = manifestFor('1.2.0');
-assert.deepStrictEqual(check(v2, signed(v2)), { version: '1.2.0', name: 'VideoCall-Setup.exe', size: entry.size, sha256: entry.sha256 });
-assert.strictEqual(check(v2, signed(v2), '1.1.0', 'linux').name, 'VideoCall.AppImage');
+assert.deepStrictEqual(check(v2, signed(v2)), { version: '1.2.0', name: 'Talvora-Setup.exe', size: entry.size, sha256: entry.sha256 });
+assert.strictEqual(check(v2, signed(v2), '1.1.0', 'linux').name, 'Talvora.AppImage');
 assert.strictEqual(check(v2, signed(v2), '1.2.0'), null, 'Already up to date');
 assert.strictEqual(check(manifestFor('1.2.0', { linux: entry }), signed(manifestFor('1.2.0', { linux: entry }))), null,
   'No package for this system');
@@ -74,10 +74,10 @@ function fakeGitHub(files, status = 200) {
   };
 }
 (async () => {
-  const github = fakeGitHub({ 'manifest.json': v2, 'manifest.sig': signed(v2), 'VideoCall-Setup.exe': pkg });
+  const github = fakeGitHub({ 'manifest.json': v2, 'manifest.sig': signed(v2), 'Talvora-Setup.exe': pkg });
   const found = await updater.checkForUpdate({ currentVersion: '1.1.0', platform: 'win32', fetchImpl: github, publicKey });
   assert.strictEqual(found.version, '1.2.0');
-  assert.strictEqual(found.downloadUrl, 'https://github.example/download/VideoCall-Setup.exe');
+  assert.strictEqual(found.downloadUrl, 'https://github.example/download/Talvora-Setup.exe');
   assert.ok(found.releaseUrl.endsWith('/v1.2.0'));
   const progress = [];
   const bytes = await updater.download(found, f => progress.push(f), github);
@@ -87,9 +87,9 @@ function fakeGitHub(files, status = 200) {
   assert.strictEqual(await updater.checkForUpdate({ currentVersion: '1.2.0', platform: 'win32', fetchImpl: github, publicKey }), null, 'Up to date');
   assert.strictEqual(await updater.checkForUpdate({ currentVersion: '1.1.0', platform: 'win32', fetchImpl: fakeGitHub({}, 404), publicKey }), null,
     'No release published yet');
-  const forged = fakeGitHub({ 'manifest.json': v2, 'manifest.sig': crypto.sign(null, Buffer.from(v2), foreign).toString('base64'), 'VideoCall-Setup.exe': pkg });
+  const forged = fakeGitHub({ 'manifest.json': v2, 'manifest.sig': crypto.sign(null, Buffer.from(v2), foreign).toString('base64'), 'Talvora-Setup.exe': pkg });
   await assert.rejects(updater.checkForUpdate({ currentVersion: '1.1.0', platform: 'win32', fetchImpl: forged, publicKey }), /not signed/);
-  const bigger = fakeGitHub({ 'manifest.json': v2, 'manifest.sig': signed(v2), 'VideoCall-Setup.exe': Buffer.concat([pkg, pkg]) });
+  const bigger = fakeGitHub({ 'manifest.json': v2, 'manifest.sig': signed(v2), 'Talvora-Setup.exe': Buffer.concat([pkg, pkg]) });
   await assert.rejects(updater.download(found, () => {}, bigger), /larger than announced/);
   assert.strictEqual(updater.RELEASES_REPO, 'peaceforallOS/Talvora');
   console.log('✓ Test 4b Passed: GitHub release checked, downloaded with progress, forgeries refused');
@@ -103,7 +103,7 @@ function runRest() {
 // 5. The release tool refuses a key that does not match the one built into the app
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'videocall-updates-'));
 process.on('exit', () => fs.rmSync(dir, { recursive: true, force: true }));
-fs.writeFileSync(path.join(dir, 'VideoCall-Setup.exe'), pkg);
+fs.writeFileSync(path.join(dir, 'Talvora-Setup.exe'), pkg);
 fs.writeFileSync(path.join(dir, 'wrong-key.pem'), privateKey.export({ type: 'pkcs8', format: 'pem' }));
 const tool = spawnSync(process.execPath, [path.join(__dirname, '../../scripts/sign-updates.js'), dir], {
   env: { ...process.env, VIDEOCALL_RELEASE_KEY: path.join(dir, 'wrong-key.pem') }, encoding: 'utf8'
@@ -114,20 +114,22 @@ assert.ok(!fs.existsSync(path.join(dir, 'manifest.sig')), 'No signature written 
 console.log('✓ Test 5 Passed: Release tool refuses a mismatched key');
 
 // 5b. Installers left in the temp folder by earlier updates are removed on the next start
-fs.writeFileSync(path.join(dir, 'VideoCall-Setup-1.1.1.exe'), 'old installer');
-fs.writeFileSync(path.join(dir, 'VideoCall-Setup-notes.txt'), 'not ours');
+fs.writeFileSync(path.join(dir, 'Talvora-Setup-1.1.1.exe'), 'old installer');
+fs.writeFileSync(path.join(dir, 'VideoCall-Setup-1.5.1.exe'), 'installer from before the rename');
+fs.writeFileSync(path.join(dir, 'Talvora-Setup-notes.txt'), 'not ours');
 updater.removeOldDownloads(dir);
-assert.ok(!fs.existsSync(path.join(dir, 'VideoCall-Setup-1.1.1.exe')), 'Old update installer kept');
-assert.ok(fs.existsSync(path.join(dir, 'VideoCall-Setup-notes.txt')), 'Unrelated file removed');
+assert.ok(!fs.existsSync(path.join(dir, 'Talvora-Setup-1.1.1.exe')), 'Old update installer kept');
+assert.ok(!fs.existsSync(path.join(dir, 'VideoCall-Setup-1.5.1.exe')), 'Installer from before the rename kept');
+assert.ok(fs.existsSync(path.join(dir, 'Talvora-Setup-notes.txt')), 'Unrelated file removed');
 console.log('✓ Test 5b Passed: Downloaded update installers cleaned up');
 
 // 6. Linux: the AppImage the app runs from is replaced by the verified download, then started
 if (process.platform === 'linux') {
-  const appImage = path.join(dir, 'VideoCall.AppImage');
+  const appImage = path.join(dir, 'Talvora.AppImage');
   fs.writeFileSync(appImage, 'old version', { mode: 0o755 });
   const marker = path.join(dir, 'started');
   const newApp = Buffer.from(`#!/bin/sh\ntouch "${marker}"\n`);
-  const linuxUpdate = { version: '1.2.0', name: 'VideoCall.AppImage', size: newApp.length, sha256: crypto.createHash('sha256').update(newApp).digest('hex') };
+  const linuxUpdate = { version: '1.2.0', name: 'Talvora.AppImage', size: newApp.length, sha256: crypto.createHash('sha256').update(newApp).digest('hex') };
   updater.launchUpdate(newApp, linuxUpdate, { platform: 'linux', appImage });
   assert.strictEqual(fs.readFileSync(appImage, 'utf8'), newApp.toString(), 'AppImage not replaced');
   assert.ok(fs.statSync(appImage).mode & 0o111, 'New AppImage is not executable');

@@ -79,7 +79,7 @@ class ConnectionCheck {
 
   /**
    * What to tell the user. `fixable` means this computer's firewall is the likely cause and the
-   * app can ask for permission to allow VideoCall.
+   * app can ask for permission to allow Talvora.
    */
   static explain(origin, { web, media, firewall }) {
     const url = new URL(origin);
@@ -96,8 +96,8 @@ class ConnectionCheck {
         fixable: true,
         problems,
         advice: problems.length
-          ? `${firewall.firewall} on this computer may be blocking VideoCall. Allow it? Your system will ask for administrator permission.`
-          : `${firewall.firewall} on this computer does not allow VideoCall yet. Allowing it lets calls connect directly, ` +
+          ? `${firewall.firewall} on this computer may be blocking Talvora. Allow it? Your system will ask for administrator permission.`
+          : `${firewall.firewall} on this computer does not allow Talvora yet. Allowing it lets calls connect directly, ` +
             'which is faster and gives better quality. Your system will ask for administrator permission.'
       };
     }

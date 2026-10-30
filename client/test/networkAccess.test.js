@@ -78,10 +78,11 @@ async function runNetworkAccessTests() {
   console.log('✓ Test 3 Passed: Advice distinguishes this computer, the network and the server');
 
   // 4. Windows: one elevated command removes old rules and allows this program in and out
-  const command = firewall.windowsAllowCommand('C:\\Users\\Omid\\AppData\\Local\\Temp\\VideoCall\\VideoCall.exe');
-  assert.strictEqual(command.split(' & ').length, 3);
-  assert.ok(command.includes('delete rule name="VideoCall"'));
-  assert.ok(command.includes('dir=in action=allow program="C:\\Users\\Omid\\AppData\\Local\\Temp\\VideoCall\\VideoCall.exe"'));
+  const command = firewall.windowsAllowCommand('C:\\Users\\Omid\\AppData\\Local\\Temp\\Talvora\\Talvora.exe');
+  assert.strictEqual(command.split(' & ').length, 4);
+  assert.ok(command.includes('delete rule name="VideoCall"'), 'The rule from the app\'s earlier name must be removed');
+  assert.ok(command.includes('delete rule name="Talvora"'));
+  assert.ok(command.includes('dir=in action=allow program="C:\\Users\\Omid\\AppData\\Local\\Temp\\Talvora\\Talvora.exe"'));
   assert.ok(command.includes('dir=out action=allow'));
   assert.ok(!firewall.windowsAllowCommand('C:\\a"b.exe').includes('a"b'), 'Quotes must not break out of the program path');
   console.log('✓ Test 4 Passed: Windows Firewall rule command built safely');

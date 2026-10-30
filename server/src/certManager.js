@@ -283,7 +283,7 @@ class CertManager {
       cert.serialNumber = `01${crypto.randomBytes(15).toString('hex')}`;
       cert.validity.notBefore = new Date(Date.now() - 60 * 60 * 1000);
       cert.validity.notAfter = new Date(Date.now() + LOCAL_CA_YEARS * 365 * 24 * 60 * 60 * 1000);
-      const subject = [{ name: 'commonName', value: `VideoCall Server CA (${os.hostname()})` }];
+      const subject = [{ name: 'commonName', value: `Talvora Server CA (${os.hostname()})` }];
       cert.setSubject(subject);
       cert.setIssuer(subject);
       cert.setExtensions([

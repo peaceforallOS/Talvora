@@ -5,7 +5,7 @@
  * and the downloaded file matches the manifest's size and SHA-256. Whoever controls the download
  * (GitHub, a proxy, even the GitHub account) can therefore not slip in other programs.
  *
- *  - Windows: runs the downloaded VideoCall-Setup.exe silently as an update (same folder, same
+ *  - Windows: runs the downloaded Talvora-Setup.exe silently as an update (same folder, same
  *    "only me / all users" choice, shortcuts kept), which then starts the new version.
  *  - Linux:   replaces the AppImage file the app was started from, then starts it again.
  */
@@ -40,7 +40,7 @@ function isNewer(candidate, current) {
 function verifyManifest(manifestText, signature, { currentVersion, platform = process.platform, publicKey = PUBLIC_KEY }) {
   const valid = typeof manifestText === 'string' && typeof signature === 'string' &&
     crypto.verify(null, Buffer.from(manifestText), publicKey, Buffer.from(signature, 'base64'));
-  if (!valid) throw new Error('The update is not signed by the VideoCall release key.');
+  if (!valid) throw new Error('The update is not signed by the Talvora release key.');
   const manifest = JSON.parse(manifestText);
   const entry = manifest.files && manifest.files[platform];
   if (!entry || !isNewer(manifest.version, currentVersion)) return null;
@@ -121,14 +121,14 @@ function start(file, args) {
 function launchUpdate(bytes, update, { platform = process.platform, appImage = process.env.APPIMAGE, tempDir = os.tmpdir() } = {}) {
   verifyPackage(bytes, update);
   if (platform === 'win32') {
-    const installer = path.join(tempDir, `VideoCall-Setup-${update.version}.exe`);
+    const installer = path.join(tempDir, `Talvora-Setup-${update.version}.exe`);
     fs.writeFileSync(installer, bytes);
     // --updated: same folder and install mode, shortcuts as the user left them; --force-run: start afterwards
     start(installer, ['/S', '--updated', '--force-run']);
     return installer;
   }
   if (platform === 'linux') {
-    if (!appImage) throw new Error('This copy of VideoCall was not started from an AppImage, so it cannot update itself.');
+    if (!appImage) throw new Error('This copy of Talvora was not started from an AppImage, so it cannot update itself.');
     const next = `${appImage}.update`;
     try {
       fs.writeFileSync(next, bytes, { mode: 0o755 });
@@ -136,7 +136,7 @@ function launchUpdate(bytes, update, { platform = process.platform, appImage = p
       fs.renameSync(next, appImage); // the running copy keeps working until it quits
     } catch (err) {
       fs.rmSync(next, { force: true });
-      throw new Error(`VideoCall cannot replace ${appImage} (${err.code || err.message}). Download the new version from https://github.com/${RELEASES_REPO}/releases instead.`);
+      throw new Error(`Talvora cannot replace ${appImage} (${err.code || err.message}). Download the new version from https://github.com/${RELEASES_REPO}/releases instead.`);
     }
     start(appImage, []);
     return appImage;
@@ -148,7 +148,7 @@ function launchUpdate(bytes, update, { platform = process.platform, appImage = p
 function removeOldDownloads(tempDir = os.tmpdir()) {
   try {
     for (const name of fs.readdirSync(tempDir)) {
-      if (/^VideoCall-Setup-\d+\.\d+\.\d+\.exe$/.test(name)) fs.rmSync(path.join(tempDir, name), { force: true });
+      if (/^(Talvora|VideoCall)-Setup-\d+\.\d+\.\d+\.exe$/.test(name)) fs.rmSync(path.join(tempDir, name), { force: true });
     }
   } catch (e) {
     // nothing to clean, or still in use: tried again next start

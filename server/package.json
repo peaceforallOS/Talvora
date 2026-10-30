@@ -1,7 +1,7 @@
 {
   "name": "videocall-server",
-  "version": "1.5.1",
-  "description": "Video Call Application - Linux Server Edition & Relay Backend",
+  "version": "1.6.0",
+  "description": "Talvora server: call relay and management panel for Linux",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",

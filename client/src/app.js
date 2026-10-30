@@ -1,5 +1,5 @@
 /**
- * Video Call Application — UI Coordinator & Event Handler
+ * Talvora — UI Coordinator & Event Handler
  */
 
 (function () {
@@ -122,7 +122,7 @@
     onAuthSuccess: (user, roomState) => {
       if (pendingJoin) {
         serverHistory.record({ ...pendingJoin, roomId: roomState.roomId });
-        // In the background: is the audio/video port reachable, and does the firewall allow VideoCall?
+        // In the background: is the audio/video port reachable, and does the firewall allow Talvora?
         const origin = ServerHistory.serverOf(pendingJoin.link);
         setTimeout(() => checkNetwork(origin), 1500);
         pendingJoin = null;
@@ -348,7 +348,7 @@
     ];
     if (result.firewall?.firewall) {
       rows.push(["This computer's firewall", result.firewall.firewall, result.firewall.blocking ? 'warn' : 'ok',
-        result.firewall.blocking ? 'does not allow VideoCall yet' : 'allows VideoCall']);
+        result.firewall.blocking ? 'does not allow Talvora yet' : 'allows Talvora']);
     }
     networkChecks.innerHTML = rows.map(([label, detail, state, status]) => `
       <li class="network-check" data-state="${state}">
@@ -394,7 +394,7 @@
       const allowed = await window.videocallNative.firewallAllow(networkPrompt.origin);
       if (allowed) {
         modalNetwork.classList.add('hidden');
-        showToast('VideoCall is now allowed through the firewall.');
+        showToast('Talvora is now allowed through the firewall.');
         checkNetwork(networkPrompt.origin, { force: true });
       } else {
         showToast('Permission was not given, so nothing was changed.');
@@ -423,8 +423,8 @@
     // Offer each version once per run; "Later" hides it until a newer one appears
     if (!update || update.version === offeredVersion) return;
     offeredVersion = update.version;
-    updateTitle.textContent = `VideoCall ${update.version} is available`;
-    updateStatus.textContent = `Install it now (${Math.max(1, Math.round(update.size / 1048576))} MB); VideoCall restarts by itself.`;
+    updateTitle.textContent = `Talvora ${update.version} is available`;
+    updateStatus.textContent = `Install it now (${Math.max(1, Math.round(update.size / 1048576))} MB); Talvora restarts by itself.`;
     btnUpdateInstall.textContent = 'Install';
     updateCard.classList.remove('hidden');
   }
@@ -447,7 +447,7 @@
     try {
       const result = await window.videocallNative.updateInstall();
       if (!result.ok) throw new Error(result.error);
-      updateStatus.textContent = 'Installing… VideoCall will close and start again.';
+      updateStatus.textContent = 'Installing… Talvora will close and start again.';
     } catch (e) {
       installingUpdate = false;
       updateStatus.textContent = `The update could not be installed: ${e.message}`;
@@ -505,7 +505,7 @@
     screenJoin.classList.add('hidden');
     screenRoom.classList.remove('hidden');
 
-    roomNameDisplay.textContent = roomState.roomId || 'Video Call Room';
+    roomNameDisplay.textContent = roomState.roomId || 'Talvora Room';
     roleBadge.textContent = String(user.role).toUpperCase();
     headerUsername.textContent = user.username;
     headerUserAvatar.textContent = user.username.charAt(0).toUpperCase();

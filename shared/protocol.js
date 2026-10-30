@@ -1,6 +1,6 @@
 /**
  * Shared Protocol, Token Security & Data Models
- * Video Call Application
+ * Talvora
  */
 
 const crypto = require('crypto');

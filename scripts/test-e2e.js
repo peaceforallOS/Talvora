@@ -311,12 +311,12 @@ async function runE2E() {
 
   // STEP 10: Deliverables Verification (Instruction 7 & 8)
   console.log('[E2E Step 10] Verifying required deliverables and extra.txt...');
-  assert.ok(fs.existsSync(path.join(__dirname, '../dist/windows/VideoCall-Setup.exe')), 'Missing Windows client deliverable');
-  assert.ok(fs.existsSync(path.join(__dirname, '../dist/linux/VideoCall.AppImage')), 'Missing Linux client deliverable');
+  assert.ok(fs.existsSync(path.join(__dirname, '../dist/windows/Talvora-Setup.exe')), 'Missing Windows client deliverable');
+  assert.ok(fs.existsSync(path.join(__dirname, '../dist/linux/Talvora.AppImage')), 'Missing Linux client deliverable');
   assert.ok(fs.existsSync(path.join(__dirname, '../dist/videocall-server.tar.gz')), 'Missing Linux server installer bundle');
   assert.ok(fs.existsSync(path.join(__dirname, '../docs/extra.txt')), 'Missing extra.txt');
-  console.log('  ✓ Deliverable 1: Windows Client -> dist/windows/VideoCall-Setup.exe');
-  console.log('  ✓ Deliverable 2: Linux Client   -> dist/linux/VideoCall.AppImage');
+  console.log('  ✓ Deliverable 1: Windows Client -> dist/windows/Talvora-Setup.exe');
+  console.log('  ✓ Deliverable 2: Linux Client   -> dist/linux/Talvora.AppImage');
   console.log('  ✓ Deliverable 3: Linux Server   -> dist/videocall-server.tar.gz');
   console.log('  ✓ Deliverable 4: Extra Features -> docs/extra.txt');
   console.log('  [PASS] All deliverables present and verified.\n');

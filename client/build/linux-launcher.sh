@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# VideoCall launcher (Linux). Electron needs a set of system libraries that minimal installs can
+# Talvora launcher (Linux). Electron needs a set of system libraries that minimal installs can
 # lack, and without them the app cannot even start. This script runs first: it finds missing
 # libraries, asks for permission, installs them with the system's package manager, then starts
 # the app (videocall-bin). See build/afterPack.js.
@@ -106,10 +106,10 @@ install_command() {
 
 # Dialogs run without the app's library path (they are system programs)
 show_error() {
-  if [ -t 2 ]; then echo "VideoCall: $1" >&2; fi
-  if command -v zenity >/dev/null 2>&1; then LD_LIBRARY_PATH="" zenity --error --title=VideoCall --text="$1" 2>/dev/null
-  elif command -v kdialog >/dev/null 2>&1; then LD_LIBRARY_PATH="" kdialog --title VideoCall --error "$1" 2>/dev/null
-  elif command -v notify-send >/dev/null 2>&1; then LD_LIBRARY_PATH="" notify-send VideoCall "$1" 2>/dev/null
+  if [ -t 2 ]; then echo "Talvora: $1" >&2; fi
+  if command -v zenity >/dev/null 2>&1; then LD_LIBRARY_PATH="" zenity --error --title=Talvora --text="$1" 2>/dev/null
+  elif command -v kdialog >/dev/null 2>&1; then LD_LIBRARY_PATH="" kdialog --title Talvora --error "$1" 2>/dev/null
+  elif command -v notify-send >/dev/null 2>&1; then LD_LIBRARY_PATH="" notify-send Talvora "$1" 2>/dev/null
   fi
 }
 
@@ -122,9 +122,9 @@ ask_permission() {
     return
   fi
   if command -v zenity >/dev/null 2>&1; then
-    LD_LIBRARY_PATH="" zenity --question --title=VideoCall --width=420 --text="${text}" --ok-label=Install 2>/dev/null
+    LD_LIBRARY_PATH="" zenity --question --title=Talvora --width=420 --text="${text}" --ok-label=Install 2>/dev/null
   elif command -v kdialog >/dev/null 2>&1; then
-    LD_LIBRARY_PATH="" kdialog --title VideoCall --yesno "${text}" 2>/dev/null
+    LD_LIBRARY_PATH="" kdialog --title Talvora --yesno "${text}" 2>/dev/null
   else
     return 0 # no dialog program: the system's password prompt below asks instead
   fi
@@ -163,11 +163,11 @@ ensure_prerequisites() {
   fi
 
   if [ -z "${cmd}" ]; then
-    show_error "VideoCall cannot start: these system libraries are missing: ${missing[*]}. Install them with your distribution's package manager, then start VideoCall again."
+    show_error "Talvora cannot start: these system libraries are missing: ${missing[*]}. Install them with your distribution's package manager, then start Talvora again."
     exit 1
   fi
-  if ! ask_permission "VideoCall needs some system components that are not installed yet: ${known[*]}. They will be installed with your system's package manager (your password is required)."; then
-    show_error "VideoCall cannot start without: ${known[*]}. Install them with: ${cmd}"
+  if ! ask_permission "Talvora needs some system components that are not installed yet: ${known[*]}. They will be installed with your system's package manager (your password is required)."; then
+    show_error "Talvora cannot start without: ${known[*]}. Install them with: ${cmd}"
     exit 1
   fi
   if ! run_as_root "${cmd}"; then
@@ -177,7 +177,7 @@ ensure_prerequisites() {
 
   mapfile -t missing < <(missing_libs)
   if [ "${#missing[@]}" -gt 0 ]; then
-    show_error "VideoCall cannot start: still missing ${missing[*]}. Install them with your distribution's package manager."
+    show_error "Talvora cannot start: still missing ${missing[*]}. Install them with your distribution's package manager."
     exit 1
   fi
 }

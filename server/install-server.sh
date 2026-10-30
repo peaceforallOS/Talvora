@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Video Call Application — Linux Server Edition Automated Installer
+# Talvora — Linux Server Edition Automated Installer
 # ==============================================================================
 
 set -e
@@ -14,7 +14,7 @@ NC='\033[0m' # No Color
 
 echo -e "${BLUE}${BOLD}"
 echo "========================================================================"
-echo "    VIDEO CALL APPLICATION — LINUX SERVER EDITION INSTALLER            "
+echo "    TALVORA — LINUX SERVER EDITION INSTALLER            "
 echo "========================================================================"
 echo -e "${NC}"
 
@@ -30,7 +30,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --domain) ARG_DOMAIN="$2"; ARGS_GIVEN=1; shift 2 ;;
     --email) ARG_EMAIL="$2"; ARGS_GIVEN=1; shift 2 ;;
-    --no-https) echo "--no-https is no longer supported: VideoCall only accepts encrypted (HTTPS) connections."; exit 1 ;;
+    --no-https) echo "--no-https is no longer supported: Talvora only accepts encrypted (HTTPS) connections."; exit 1 ;;
     --lan-only) ARG_LAN_ONLY=1; ARGS_GIVEN=1; shift ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
@@ -138,19 +138,19 @@ install_private_node() {
 
 if [ -x "${PRIVATE_NODE_DIR}/bin/node" ] && [ "$(node_major "${PRIVATE_NODE_DIR}/bin/node")" -ge "${MIN_NODE_MAJOR}" ]; then
   export PATH="${PRIVATE_NODE_DIR}/bin:${PATH}"
-  echo -e "${GREEN}✓ Node.js $(node -v) (VideoCall's own copy)${NC}"
+  echo -e "${GREEN}✓ Node.js $(node -v) (Talvora's own copy)${NC}"
 elif command -v node >/dev/null 2>&1 && [ "$(node_major node)" -ge "${MIN_NODE_MAJOR}" ] && command -v npm >/dev/null 2>&1; then
   echo -e "${GREEN}✓ Node.js $(node -v) is installed${NC}"
 else
   if command -v node >/dev/null 2>&1; then
-    echo -e "${YELLOW}Node.js $(node -v) is too old (VideoCall needs ${MIN_NODE_MAJOR} or newer, with npm).${NC}"
+    echo -e "${YELLOW}Node.js $(node -v) is too old (Talvora needs ${MIN_NODE_MAJOR} or newer, with npm).${NC}"
   else
     echo -e "${YELLOW}Node.js is not installed.${NC}"
   fi
   mkdir -p "${INSTALL_DIR}"
   install_private_node
   [ -x "${PRIVATE_NODE_DIR}/bin/node" ] && export PATH="${PRIVATE_NODE_DIR}/bin:${PATH}"
-  echo -e "${GREEN}✓ Node.js $(node -v) installed for VideoCall${NC}"
+  echo -e "${GREEN}✓ Node.js $(node -v) installed for Talvora${NC}"
 fi
 
 # 2. Setup Server Directory
@@ -228,7 +228,7 @@ else
   if [ -n "${ARG_LAN_ONLY}" ]; then PORT_FORWARDING=off; PUBLIC_IP=""; else PORT_FORWARDING=auto; PUBLIC_IP=auto; fi
   umask 077
   cat > "${ENV_FILE}" << EOF
-# Video Call server settings. Re-run the installer (or edit this file and restart) to change them.
+# Talvora server settings. Re-run the installer (or edit this file and restart) to change them.
 TLS_MODE=${TLS_MODE}
 DOMAIN=${DOMAIN}
 # Reachable from the internet: PORT_FORWARDING=auto opens the ports on the router (UPnP) and
@@ -271,7 +271,7 @@ cat > "${LAUNCHER}" << 'EOF'
 # Resolve symlinks: this script is usually invoked through the videocall-server link
 DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 cd "$DIR"
-# Node.js the installer downloaded for VideoCall (when the system's own was missing or too old)
+# Node.js the installer downloaded for Talvora (when the system's own was missing or too old)
 if [ -x node/bin/node ]; then
   export PATH="$DIR/node/bin:$PATH"
 fi
@@ -349,7 +349,7 @@ if [ "$EUID" -eq 0 ] && command -v systemctl >/dev/null 2>&1; then
 
   cat > /etc/systemd/system/videocall-server.service << EOF
 [Unit]
-Description=Video Call Relay Server & Management Panel
+Description=Talvora Relay Server & Management Panel
 After=network-online.target
 Wants=network-online.target
 
@@ -411,7 +411,7 @@ if [ -f "${INFO_FILE}" ]; then
     echo -e "${BLUE}HTTPS:${NC}          Let's Encrypt certificate (valid until $(info certificate.validUntil); renewed automatically)"
   elif [ -n "${ISSUER}" ]; then
     echo -e "${BLUE}HTTPS:${NC}          the server's own certificate (renewed automatically). Invite links carry its"
-    echo -e "                 fingerprint, so the VideoCall app trusts it. Browsers will show a warning."
+    echo -e "                 fingerprint, so the Talvora app trusts it. Browsers will show a warning."
     if [ -z "${DOMAIN}" ] && [ "$(info certificate.mode)" = "ip" ]; then
       echo -e "                 A Let's Encrypt IP certificate is being retried: check that port ${HTTP_PORT}/tcp is reachable."
     fi

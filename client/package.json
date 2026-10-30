@@ -1,7 +1,7 @@
 {
   "name": "videocall-client",
-  "version": "1.5.1",
-  "description": "Cross-Platform Video Call Application for Windows & Linux",
+  "version": "1.6.0",
+  "description": "Talvora: self-hosted encrypted video calls for Windows & Linux",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -13,11 +13,11 @@
     "electron": "^33.2.0",
     "electron-builder": "^26.18.0"
   },
-  "author": "VideoCall",
+  "author": "Talvora",
   "build": {
     "appId": "com.videocall.client",
-    "productName": "VideoCall",
-    "copyright": "VideoCall",
+    "productName": "Talvora",
+    "copyright": "Talvora",
     "afterPack": "build/afterPack.js",
     "files": [
       "main.js",
@@ -46,14 +46,14 @@
       "icon": "build/icon.ico"
     },
     "nsis": {
-      "artifactName": "VideoCall-Setup.exe",
+      "artifactName": "Talvora-Setup.exe",
       "oneClick": false,
       "perMachine": false,
       "allowElevation": true,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "VideoCall",
+      "shortcutName": "Talvora",
       "runAfterFinish": true,
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
@@ -75,7 +75,7 @@
       "syncDesktopName": true
     },
     "appImage": {
-      "artifactName": "VideoCall.AppImage"
+      "artifactName": "Talvora.AppImage"
     },
     "toolsets": {
       "appimage": "1.0.3"

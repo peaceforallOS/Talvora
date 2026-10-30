@@ -61,7 +61,7 @@ function createWindow() {
     minWidth: 800,
     minHeight: 600,
     backgroundColor: '#07090f',
-    title: 'VideoCall',
+    title: 'Talvora',
     icon: path.join(__dirname, 'src/icon.png'),
     autoHideMenuBar: true,
     webPreferences: {
@@ -140,7 +140,7 @@ ipcMain.handle('firewall-status', event => {
   return firewall.status();
 });
 
-// The ports VideoCall uses to reach a server: its web port and the media relay (TURN) ports
+// The ports Talvora uses to reach a server: its web port and the media relay (TURN) ports
 ipcMain.handle('firewall-allow', (event, origin) => {
   if (!event.senderFrame || !isAppUrl(event.senderFrame.url)) return false;
   try {
