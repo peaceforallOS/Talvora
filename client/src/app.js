@@ -1063,6 +1063,15 @@
   sharedAudioElement.addEventListener('timeupdate', renderMusicProgress);
   sharedAudioElement.addEventListener('loadedmetadata', renderMusicProgress);
 
+  // The server does not know a track's length, so the DJ's client reports the end: the track stays
+  // loaded, paused at the start, and the play button can start it again
+  sharedAudioElement.addEventListener('ended', () => {
+    const state = musicState();
+    if (!state?.isPlaying || !isMusicController(state)) return;
+    clientCore.sendMusicAction({ action: 'pause' });
+    clientCore.sendMusicAction({ action: 'seek', time: 0 });
+  });
+
   function updateMusicModalView() {
     const state = musicState();
     const me = clientCore.currentUser;
@@ -1199,6 +1208,11 @@
   function toggleMusic() {
     const state = musicState();
     if (!isMusicController(state)) return;
+    // A track paused at (or past) its end starts over instead of ending again at once
+    const duration = sharedAudioElement.duration;
+    if (!state.isPlaying && Number.isFinite(duration) && Number(state.position ?? state.currentTime) >= duration - 0.5) {
+      clientCore.sendMusicAction({ action: 'seek', time: 0 });
+    }
     clientCore.sendMusicAction({ action: state.isPlaying ? 'pause' : 'resume' });
   }
 
