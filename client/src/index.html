@@ -29,6 +29,11 @@
     <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></symbol>
     <symbol id="i-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></symbol>
     <symbol id="i-volume" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></symbol>
+    <symbol id="i-volume-off" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="m22 9-6 6"/><path d="m16 9 6 6"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></symbol>
+    <symbol id="i-rewind" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></symbol>
+    <symbol id="i-forward" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></symbol>
     <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
     <symbol id="i-play" viewBox="0 0 24 24"><path d="M6 4v16l14-8Z"/></symbol>
     <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
@@ -146,6 +151,9 @@
             <svg class="icon"><use href="#i-volume"/></svg>
             <input type="range" id="music-volume-slider" min="0" max="1" step="0.05" value="0.8" title="Volume">
           </div>
+          <button id="btn-toggle-music-top" class="icon-btn hidden" title="Pause music for everyone">
+            <svg class="icon"><use href="#i-pause"/></svg>
+          </button>
           <button id="btn-stop-music-top" class="icon-btn icon-btn-danger" title="Stop music">
             <svg class="icon"><use href="#i-stop"/></svg>
           </button>
@@ -445,26 +453,60 @@
           </div>
         </div>
 
-        <div id="music-modal-status" class="music-status-box">
-          <div id="music-current-desc">No music currently playing.</div>
-        </div>
+        <!-- Now playing: progress for everyone, controls for the DJ and the admin -->
+        <section id="music-now" class="music-now hidden" aria-live="polite">
+          <div class="music-now-top">
+            <div class="music-now-art"><div class="music-wave-anim"><span></span><span></span><span></span><span></span></div></div>
+            <div class="music-now-text">
+              <strong id="music-now-title">Track</strong>
+              <span id="music-now-dj">Played by —</span>
+            </div>
+            <span id="music-now-state" class="music-state-badge">Playing</span>
+          </div>
+          <div class="music-progress">
+            <span id="music-time-current" class="music-time">0:00</span>
+            <input type="range" id="music-seek" min="0" max="0" step="0.1" value="0" aria-label="Position in the track">
+            <span id="music-time-total" class="music-time">0:00</span>
+          </div>
+          <div id="music-controls" class="music-controls">
+            <button id="btn-music-back" class="icon-btn" type="button" title="Back 10 seconds" aria-label="Back 10 seconds"><svg class="icon"><use href="#i-rewind"/></svg></button>
+            <button id="btn-music-toggle" class="music-play-btn" type="button" title="Pause for everyone" aria-label="Pause"><svg class="icon"><use href="#i-pause"/></svg></button>
+            <button id="btn-music-forward" class="icon-btn" type="button" title="Forward 10 seconds" aria-label="Forward 10 seconds"><svg class="icon"><use href="#i-forward"/></svg></button>
+            <button id="btn-music-stop" class="icon-btn icon-btn-danger" type="button" title="Stop for everyone" aria-label="Stop"><svg class="icon"><use href="#i-stop"/></svg></button>
+          </div>
+          <p id="music-control-note" class="field-hint music-note"></p>
+          <div class="music-volume-row">
+            <svg class="icon"><use href="#i-volume"/></svg>
+            <input type="range" id="music-modal-volume" min="0" max="1" step="0.05" value="0.8" aria-label="Music volume for you">
+            <span class="field-hint">Your volume</span>
+          </div>
+        </section>
 
-        <div class="form-group">
-          <label for="music-track-title">Track title</label>
-          <input type="text" id="music-track-title" placeholder="e.g. Relaxing Instrumental, Podcast…" value="Room Music Track">
-        </div>
+        <p id="music-idle" class="music-empty">Nothing is playing. Choose a song to play for everyone, in sync.</p>
+        <button id="btn-music-change" class="link-button hidden" type="button">
+          <svg class="icon"><use href="#i-upload"/></svg>Play a different song
+        </button>
 
-        <div class="form-group">
-          <label for="music-audio-file">Audio file (MP3, WAV, OGG)</label>
-          <input type="file" id="music-audio-file" accept="audio/*">
-        </div>
+        <!-- Start a track (nothing playing, or the DJ replacing their track) -->
+        <section id="music-start" class="music-start">
+          <label class="music-drop" for="music-audio-file">
+            <svg class="icon"><use href="#i-upload"/></svg>
+            <strong id="music-file-name">Choose an audio file</strong>
+            <span id="music-file-hint">MP3, WAV, OGG or M4A, up to 18 MB</span>
+          </label>
+          <input type="file" id="music-audio-file" class="visually-hidden" accept="audio/*">
+          <div class="form-group">
+            <label for="music-track-title">Title shown to everyone</label>
+            <input type="text" id="music-track-title" placeholder="Taken from the file name" maxlength="200" autocomplete="off">
+          </div>
+          <button id="btn-modal-play-music" class="btn btn-primary full-width" type="button" disabled><svg class="icon"><use href="#i-play"/></svg><span>Play for everyone</span></button>
+        </section>
 
+        <p id="music-locked-note" class="music-empty hidden"></p>
         <div id="music-error-alert" class="error-banner hidden"></div>
 
         <div class="modal-actions">
           <button id="btn-close-music-modal" class="btn btn-secondary">Close</button>
-          <button id="btn-modal-stop-music" class="btn btn-danger hidden"><svg class="icon"><use href="#i-stop"/></svg>Stop</button>
-          <button id="btn-modal-play-music" class="btn btn-primary"><svg class="icon"><use href="#i-play"/></svg>Play for Room</button>
         </div>
       </div>
     </div>

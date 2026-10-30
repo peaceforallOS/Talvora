@@ -8,8 +8,8 @@
  *  - Audio/video go directly between participants (full mesh). Only participants whose network blocks
  *    direct connections are relayed through the server (TURN): those connections cost server bandwidth
  *    and CPU. Everyone else costs the server almost nothing for media.
- *  - Music is sent through the server: the whole file goes to every participant on each play, pause or
- *    seek, and is buffered once per participant while it is sent.
+ *  - Music is sent through the server: each new song goes to every participant (and to anyone joining
+ *    mid-song), buffered once per participant while it is sent. Pause, resume and seek cost a few bytes.
  *
  * Relay CPU and message sizes are estimates; the recommendation keeps headroom on top of them.
  */
@@ -160,7 +160,7 @@ function estimateServer(input) {
     warnings.push({ level: 'warn', text: 'Close to the limit of one server process. Choose a CPU with high single-core speed (3 GHz or more); extra cores do not help.' });
   }
   if (music.actionsPerHour && n * musicMb > 2048) {
-    warnings.push({ level: 'warn', text: `Each song is sent to all ${n} people through the server (about ${round((n * musicMb) / 1024)} GB per play, pause or seek). Prefer smaller files or fewer participants when playing music.` });
+    warnings.push({ level: 'warn', text: `Each song is sent to all ${n} people through the server (about ${round((n * musicMb) / 1024)} GB per song). Prefer smaller files or fewer participants when playing music.` });
   }
   if (network.relay === 0) {
     warnings.push({ level: 'info', text: 'On the same local network, audio and video never pass through the server, so it needs very little.' });

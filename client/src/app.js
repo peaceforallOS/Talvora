@@ -44,11 +44,10 @@
   const musicTrackName = document.getElementById('music-track-name');
   const musicDjName = document.getElementById('music-dj-name');
   const btnStopMusicTop = document.getElementById('btn-stop-music-top');
+  const btnToggleMusicTop = document.getElementById('btn-toggle-music-top');
   const modalMusic = document.getElementById('modal-music');
   const btnCloseMusicModal = document.getElementById('btn-close-music-modal');
   const btnModalPlayMusic = document.getElementById('btn-modal-play-music');
-  const btnModalStopMusic = document.getElementById('btn-modal-stop-music');
-  const musicCurrentDesc = document.getElementById('music-current-desc');
   const musicTrackTitleInput = document.getElementById('music-track-title');
   const musicAudioFileInput = document.getElementById('music-audio-file');
   const musicErrorAlert = document.getElementById('music-error-alert');
@@ -151,6 +150,7 @@
     },
     onPermissionsUpdated: perms => {
       applyPermissionsToUI(perms);
+      updateMusicModalView(); // music may have been allowed or taken away
     },
     onChatMessage: msg => {
       chatController.receiveMessage(msg, clientCore.currentUser?.id);
@@ -159,11 +159,10 @@
       updateMusicUI(state);
     },
     onMusicError: msg => {
-      showToast(`Music error: ${msg}`);
-      if (musicErrorAlert) {
-        musicErrorAlert.textContent = msg;
-        musicErrorAlert.classList.remove('hidden');
-      }
+      showToast(`Music: ${msg}`);
+      sendingTrack = false;
+      showMusicError(msg);
+      updateMusicModalView();
     },
     onInviteGenerated: data => {
       inviteBoundName.textContent = data.username;
@@ -598,15 +597,67 @@
         <span>${escapeHtml(username.charAt(0).toUpperCase())}</span>
       </div>
       <div class="speaking-ring hidden"></div>
+      <div class="tile-volume" title="How loud ${escapeHtml(username)} is for you (only you)">
+        <button type="button" class="tile-volume-btn" aria-label="Mute ${escapeHtml(username)} for me">${iconSvg('volume')}</button>
+        <input type="range" class="tile-volume-slider" min="0" max="100" step="5" aria-label="Volume of ${escapeHtml(username)}">
+        <span class="tile-volume-value"></span>
+      </div>
       <div class="tile-overlay">
         <span class="tile-username">${escapeHtml(username)}</span>
         <span class="status-icon">${iconSvg('mic')}</span>
       </div>
     `;
     setAvatarHue(tile.querySelector('.avatar-fallback'), username);
+    setupTileVolume(tile, username);
+    applySpeaker(tile.querySelector('video'));
     videoGrid.appendChild(tile);
     updateGridLayout();
     return tile;
+  }
+
+  // --- Per-person volume: each voice plays from that person's tile, so its volume is theirs alone.
+  // (Kept at 0-100% on the media element: routing voices through Web Audio to go louder would
+  // bypass the browser's echo cancellation and make everyone hear themselves.)
+  const PEER_VOLUME_KEY = 'vc_peer_volume';
+  function savedPeerVolumes() {
+    try {
+      return JSON.parse(localStorage.getItem(PEER_VOLUME_KEY) || '{}') || {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function setupTileVolume(tile, username) {
+    const video = tile.querySelector('video');
+    const slider = tile.querySelector('.tile-volume-slider');
+    const button = tile.querySelector('.tile-volume-btn');
+    const value = tile.querySelector('.tile-volume-value');
+    const key = username.toLowerCase();
+    let beforeMute = 100;
+
+    const show = (percent, save) => {
+      video.volume = percent / 100;
+      slider.value = String(percent);
+      value.textContent = `${percent}%`;
+      button.innerHTML = iconSvg(percent === 0 ? 'volume-off' : 'volume');
+      tile.classList.toggle('is-muted-for-me', percent === 0);
+      if (save) {
+        try {
+          localStorage.setItem(PEER_VOLUME_KEY, JSON.stringify({ ...savedPeerVolumes(), [key]: percent }));
+        } catch (e) {
+          // only means the volume is not remembered next time
+        }
+      }
+    };
+    const stored = Number(savedPeerVolumes()[key]);
+    show(Number.isFinite(stored) ? Math.min(100, Math.max(0, stored)) : 100, false);
+
+    slider.addEventListener('input', () => show(Number(slider.value), true));
+    button.addEventListener('click', () => {
+      const current = Number(slider.value);
+      if (current > 0) beforeMute = current;
+      show(current > 0 ? 0 : beforeMute || 100, true);
+    });
   }
 
   function handleRemoteTrack(peerId, stream, track) {
@@ -767,6 +818,7 @@
     stopCallTimer();
 
     // Reset per-session state so the next join starts clean
+    sendingTrack = false;
     updateMusicUI(null);
     isScreenSharing = false;
     btnShareScreen.classList.remove('active');
@@ -866,39 +918,90 @@
     });
   });
 
-  // --- Synchronized Music UI & Actions ---
-  btnMusicModal.addEventListener('click', () => {
-    modalMusic.classList.remove('hidden');
-    if (musicErrorAlert) musicErrorAlert.classList.add('hidden');
-    updateMusicModalView();
-  });
-
-  btnCloseMusicModal.addEventListener('click', () => {
-    modalMusic.classList.add('hidden');
-  });
-
+  // --- Synchronized Music ---
+  // The server keeps the room's music state; every client plays the track itself, in sync. The DJ
+  // (whoever started the track) and the admin control it: pause, resume, seek, stop.
+  const musicNow = document.getElementById('music-now');
+  const musicNowTitle = document.getElementById('music-now-title');
+  const musicNowDj = document.getElementById('music-now-dj');
+  const musicNowState = document.getElementById('music-now-state');
+  const musicSeek = document.getElementById('music-seek');
+  const musicTimeCurrent = document.getElementById('music-time-current');
+  const musicTimeTotal = document.getElementById('music-time-total');
+  const musicControls = document.getElementById('music-controls');
+  const btnMusicToggle = document.getElementById('btn-music-toggle');
+  const btnMusicBack = document.getElementById('btn-music-back');
+  const btnMusicForward = document.getElementById('btn-music-forward');
+  const btnMusicStop = document.getElementById('btn-music-stop');
+  const musicControlNote = document.getElementById('music-control-note');
+  const musicIdle = document.getElementById('music-idle');
+  const musicStart = document.getElementById('music-start');
+  const musicLockedNote = document.getElementById('music-locked-note');
+  const musicDrop = document.querySelector('.music-drop');
+  const musicFileName = document.getElementById('music-file-name');
+  const musicFileHint = document.getElementById('music-file-hint');
   const musicVolumeSlider = document.getElementById('music-volume-slider');
+  const musicModalVolume = document.getElementById('music-modal-volume');
+  const MUSIC_VOLUME_KEY = 'vc_music_volume';
+  const btnMusicChange = document.getElementById('btn-music-change');
+  let loadedTrackId = null; // the track the audio element holds
+  let seeking = false; // the DJ is dragging the position slider
+  let sendingTrack = false;
+  let changingTrack = false; // the DJ opened the picker to play a different song
 
-  if (musicVolumeSlider && sharedAudioElement) {
-    musicVolumeSlider.addEventListener('input', () => {
-      sharedAudioElement.volume = parseFloat(musicVolumeSlider.value);
-    });
+  const formatTime = seconds => {
+    const s = Math.max(0, Math.floor(Number(seconds) || 0));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  };
+  const musicState = () => clientCore.roomState.musicState;
+  const isMusicController = state => !!state?.playedBy &&
+    (clientCore.currentUser?.role === 'admin' || clientCore.currentUser?.id === state.playedBy.id);
+
+  // Your own music volume, the same in the top bar and the music window, remembered
+  function setMusicVolume(value, save) {
+    const volume = Math.min(1, Math.max(0, Number(value)));
+    sharedAudioElement.volume = volume;
+    musicVolumeSlider.value = String(volume);
+    musicModalVolume.value = String(volume);
+    if (save) {
+      try {
+        localStorage.setItem(MUSIC_VOLUME_KEY, String(volume));
+      } catch (e) {
+        // only means it is not remembered next time
+      }
+    }
   }
+  setMusicVolume((() => {
+    try {
+      return localStorage.getItem(MUSIC_VOLUME_KEY) ?? 0.8;
+    } catch (e) {
+      return 0.8;
+    }
+  })(), false);
+  musicVolumeSlider.addEventListener('input', () => setMusicVolume(musicVolumeSlider.value, true));
+  musicModalVolume.addEventListener('input', () => setMusicVolume(musicModalVolume.value, true));
 
   function updateMusicUI(state) {
     // A paused track still holds the room's music lock, so the bar stays visible
     if (state && state.playedBy) {
+      const controller = isMusicController(state);
       roomMusicBar.classList.remove('hidden');
       musicTrackName.textContent = state.trackInfo?.title || 'Shared Music';
       musicDjName.textContent = `DJ: ${state.playedBy.username || 'User'}${state.isPlaying ? '' : ' (paused)'}`;
-      btnStopMusicTop.classList.toggle('hidden', !(clientCore.currentUser?.role === 'admin' || clientCore.currentUser?.id === state.playedBy.id));
+      btnStopMusicTop.classList.toggle('hidden', !controller);
+      btnToggleMusicTop.classList.toggle('hidden', !controller || (!state.isPlaying && !clientCore.supportsFeature('music-resume')));
+      btnToggleMusicTop.innerHTML = iconSvg(state.isPlaying ? 'pause' : 'play');
+      btnToggleMusicTop.title = state.isPlaying ? 'Pause music for everyone' : 'Resume music for everyone';
+      roomMusicBar.classList.toggle('is-paused', !state.isPlaying);
 
-      // Synchronize audio playback element. `position` is computed by the server at send
-      // time, which avoids depending on the client and server clocks agreeing.
+      // Synchronize the audio element. `position` is computed by the server at send time, which
+      // avoids depending on the client and server clocks agreeing.
       const url = state.trackInfo?.audioDataUrl;
       if (url) {
-        if (sharedAudioElement.src !== url) {
+        const trackKey = state.trackId || url.length; // older servers send no track id
+        if (loadedTrackId !== trackKey) {
           sharedAudioElement.src = url;
+          loadedTrackId = trackKey;
         }
         const position = Math.max(0, Number(state.position ?? state.currentTime) || 0);
         if (Math.abs(sharedAudioElement.currentTime - position) > 1) {
@@ -912,66 +1015,191 @@
       }
     } else {
       roomMusicBar.classList.add('hidden');
-      if (sharedAudioElement) {
-        sharedAudioElement.pause();
-        sharedAudioElement.currentTime = 0;
-        sharedAudioElement.removeAttribute('src');
-      }
+      sharedAudioElement.pause();
+      sharedAudioElement.removeAttribute('src');
+      sharedAudioElement.load();
+      loadedTrackId = null;
+    }
+    if (sendingTrack && state?.playedBy?.id === clientCore.currentUser?.id) {
+      sendingTrack = false;
+      changingTrack = false;
+      resetMusicPicker();
     }
     updateMusicModalView();
   }
 
-  function updateMusicModalView() {
-    const state = clientCore.roomState.musicState;
-    if (state && state.playedBy) {
-      musicCurrentDesc.innerHTML = `<strong>Playing:</strong> ${escapeHtml(state.trackInfo?.title)}<br><small>Started by ${escapeHtml(state.playedBy?.username)}</small>`;
-      const canStop = clientCore.currentUser?.role === 'admin' || clientCore.currentUser?.id === state.playedBy?.id;
-      btnModalStopMusic.classList.toggle('hidden', !canStop);
-      btnModalPlayMusic.disabled = true;
-    } else {
-      musicCurrentDesc.textContent = 'No music is currently playing.';
-      btnModalStopMusic.classList.add('hidden');
-      btnModalPlayMusic.disabled = false;
+  function renderMusicProgress() {
+    const duration = Number.isFinite(sharedAudioElement.duration) ? sharedAudioElement.duration : 0;
+    musicSeek.max = String(duration);
+    musicTimeTotal.textContent = duration ? formatTime(duration) : '–:––';
+    if (!seeking) {
+      musicSeek.value = String(sharedAudioElement.currentTime || 0);
+      musicTimeCurrent.textContent = formatTime(sharedAudioElement.currentTime);
     }
   }
+  sharedAudioElement.addEventListener('timeupdate', renderMusicProgress);
+  sharedAudioElement.addEventListener('loadedmetadata', renderMusicProgress);
+
+  function updateMusicModalView() {
+    const state = musicState();
+    const me = clientCore.currentUser;
+    const active = !!state?.playedBy;
+    const controller = isMusicController(state);
+    const isDj = active && state.playedBy.id === me?.id;
+    const canPlay = me?.permissions?.can_play_music !== false;
+
+    musicNow.classList.toggle('hidden', !active);
+    musicIdle.classList.toggle('hidden', active || !canPlay);
+    if (active) {
+      musicNow.classList.toggle('is-paused', !state.isPlaying);
+      musicNowTitle.textContent = state.trackInfo?.title || 'Shared Music';
+      musicNowDj.textContent = isDj ? 'Played by you' : `Played by ${state.playedBy.username}`;
+      musicNowState.textContent = state.isPlaying ? 'Playing' : 'Paused';
+      musicControls.classList.toggle('hidden', !controller);
+      musicSeek.disabled = !controller;
+      const canResume = clientCore.supportsFeature('music-resume');
+      btnMusicToggle.innerHTML = iconSvg(state.isPlaying ? 'pause' : 'play');
+      btnMusicToggle.title = state.isPlaying ? 'Pause for everyone' : 'Resume for everyone';
+      btnMusicToggle.setAttribute('aria-label', state.isPlaying ? 'Pause' : 'Resume');
+      btnMusicToggle.disabled = !state.isPlaying && !canResume;
+      const dj = (clientCore.roomState.participants || []).find(u => u.id === state.playedBy.id);
+      musicControlNote.textContent = !controller
+        ? `Only ${state.playedBy.username} (the DJ)${dj?.role === 'admin' ? '' : ' and the admin'} can pause or skip.`
+        : !state.isPlaying && !canResume ? 'This server is too old to resume a paused track; update it, or stop and play again.' : '';
+      renderMusicProgress();
+    }
+
+    // Start a track: when nothing plays, or the DJ choosing to replace their own track
+    if (!active || !isDj) changingTrack = false;
+    btnMusicChange.classList.toggle('hidden', !(canPlay && active && isDj && !changingTrack));
+    musicStart.classList.toggle('hidden', !canPlay || (active && !(isDj && changingTrack)));
+    btnModalPlayMusic.querySelector('span').textContent = sendingTrack ? 'Sending to the room…' : isDj ? 'Play this instead' : 'Play for everyone';
+    btnModalPlayMusic.disabled = sendingTrack || !(musicAudioFileInput.files && musicAudioFileInput.files[0]) || musicDrop.classList.contains('has-error');
+
+    const locked = !canPlay
+      ? 'The admin has turned off music for you.'
+      : active && !isDj ? `${state.playedBy.username} is the DJ right now. You can play your own track when they stop.` : '';
+    musicLockedNote.textContent = locked;
+    musicLockedNote.classList.toggle('hidden', !locked);
+  }
+
+  function showMusicError(message) {
+    musicErrorAlert.textContent = message;
+    musicErrorAlert.classList.toggle('hidden', !message);
+  }
+
+  function resetMusicPicker() {
+    musicAudioFileInput.value = '';
+    musicTrackTitleInput.value = '';
+    musicFileName.textContent = 'Choose an audio file';
+    musicFileHint.textContent = `MP3, WAV, OGG or M4A, up to ${MAX_MUSIC_FILE_BYTES / 1024 / 1024} MB`;
+    musicDrop.classList.remove('has-file', 'has-error');
+    updateMusicModalView();
+  }
+
+  function chooseMusicFile(file) {
+    showMusicError('');
+    if (!file) {
+      resetMusicPicker();
+      return;
+    }
+    const tooLarge = file.size > MAX_MUSIC_FILE_BYTES;
+    const notAudio = file.type && !file.type.startsWith('audio/');
+    musicDrop.classList.add('has-file');
+    musicDrop.classList.toggle('has-error', tooLarge || notAudio);
+    musicFileName.textContent = file.name;
+    musicFileHint.textContent = notAudio
+      ? 'This is not an audio file.'
+      : tooLarge ? `${(file.size / 1048576).toFixed(1)} MB is too large (maximum ${MAX_MUSIC_FILE_BYTES / 1024 / 1024} MB).`
+        : `${(file.size / 1048576).toFixed(1)} MB · click to choose another`;
+    if (!musicTrackTitleInput.value.trim()) musicTrackTitleInput.value = file.name.replace(/\.[^/.]+$/, '');
+    updateMusicModalView();
+  }
+
+  musicAudioFileInput.addEventListener('change', () => chooseMusicFile(musicAudioFileInput.files[0]));
+  // Drag a song onto the picker
+  musicDrop.addEventListener('dragover', e => {
+    e.preventDefault();
+    musicDrop.classList.add('is-dragover');
+  });
+  musicDrop.addEventListener('dragleave', () => musicDrop.classList.remove('is-dragover'));
+  musicDrop.addEventListener('drop', e => {
+    e.preventDefault();
+    musicDrop.classList.remove('is-dragover');
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    const files = new DataTransfer();
+    files.items.add(file);
+    musicAudioFileInput.files = files.files;
+    chooseMusicFile(file);
+  });
+
+  btnMusicModal.addEventListener('click', () => {
+    modalMusic.classList.remove('hidden');
+    showMusicError('');
+    changingTrack = false;
+    updateMusicModalView();
+  });
+
+  btnMusicChange.addEventListener('click', () => {
+    changingTrack = true;
+    updateMusicModalView();
+  });
+
+  btnCloseMusicModal.addEventListener('click', () => {
+    modalMusic.classList.add('hidden');
+  });
 
   btnModalPlayMusic.addEventListener('click', () => {
-    const title = musicTrackTitleInput.value.trim() || 'Room Music';
     const file = musicAudioFileInput.files && musicAudioFileInput.files[0];
-
-    if (file) {
-      if (file.size > MAX_MUSIC_FILE_BYTES) {
-        musicErrorAlert.textContent = `This file is too large to share (maximum ${MAX_MUSIC_FILE_BYTES / 1024 / 1024} MB).`;
-        musicErrorAlert.classList.remove('hidden');
-        return;
+    if (!file || musicDrop.classList.contains('has-error')) return;
+    const title = musicTrackTitleInput.value.trim() || file.name.replace(/\.[^/.]+$/, '');
+    sendingTrack = true;
+    updateMusicModalView();
+    const reader = new FileReader();
+    reader.onload = e => {
+      if (!clientCore.sendMusicAction({ action: 'play', trackInfo: { title, audioDataUrl: e.target.result } })) {
+        sendingTrack = false;
+        showMusicError('Not connected to the room.');
+        updateMusicModalView();
       }
-      musicErrorAlert.classList.add('hidden');
-      const reader = new FileReader();
-      reader.onload = e => {
-        clientCore.sendMusicAction({
-          action: 'play',
-          trackInfo: {
-            title: file.name.replace(/\.[^/.]+$/, ''),
-            audioDataUrl: e.target.result
-          }
-        });
-      };
-      reader.readAsDataURL(file);
-    } else {
-      clientCore.sendMusicAction({
-        action: 'play',
-        trackInfo: { title }
-      });
-    }
+    };
+    reader.onerror = () => {
+      sendingTrack = false;
+      showMusicError('This file could not be read.');
+      updateMusicModalView();
+    };
+    reader.readAsDataURL(file);
   });
 
-  btnModalStopMusic.addEventListener('click', () => {
-    clientCore.sendMusicAction({ action: 'stop' });
+  // DJ controls
+  function toggleMusic() {
+    const state = musicState();
+    if (!isMusicController(state)) return;
+    clientCore.sendMusicAction({ action: state.isPlaying ? 'pause' : 'resume' });
+  }
+
+  function seekMusicTo(seconds) {
+    const duration = Number.isFinite(sharedAudioElement.duration) ? sharedAudioElement.duration : Infinity;
+    clientCore.sendMusicAction({ action: 'seek', time: Math.min(Math.max(0, seconds), Math.max(0, duration - 0.5)) });
+  }
+
+  btnMusicToggle.addEventListener('click', toggleMusic);
+  btnToggleMusicTop.addEventListener('click', toggleMusic);
+  btnMusicBack.addEventListener('click', () => seekMusicTo(sharedAudioElement.currentTime - 10));
+  btnMusicForward.addEventListener('click', () => seekMusicTo(sharedAudioElement.currentTime + 10));
+  musicSeek.addEventListener('input', () => {
+    seeking = true;
+    musicTimeCurrent.textContent = formatTime(musicSeek.value);
+  });
+  musicSeek.addEventListener('change', () => {
+    seeking = false;
+    seekMusicTo(Number(musicSeek.value));
   });
 
-  btnStopMusicTop.addEventListener('click', () => {
-    clientCore.sendMusicAction({ action: 'stop' });
-  });
+  const stopMusic = () => clientCore.sendMusicAction({ action: 'stop' });
+  btnMusicStop.addEventListener('click', stopMusic);
+  btnStopMusicTop.addEventListener('click', stopMusic);
 
   // --- Device Settings Modal & Hardware Controls ---
   const btnDeviceSettings = document.getElementById('btn-device-settings');
@@ -981,6 +1209,63 @@
   const selectVideoInput = document.getElementById('select-video-input');
   const selectAudioOutput = document.getElementById('select-audio-output');
   const micTestFill = document.getElementById('mic-test-fill');
+
+  // Chosen devices are remembered between calls and used when the camera and microphone open
+  const DEVICES_KEY = 'vc_devices';
+  function savedDevices() {
+    try {
+      return JSON.parse(localStorage.getItem(DEVICES_KEY) || '{}') || {};
+    } catch (e) {
+      return {};
+    }
+  }
+  function saveDevice(kind, deviceId) {
+    try {
+      localStorage.setItem(DEVICES_KEY, JSON.stringify({ ...savedDevices(), [kind]: deviceId }));
+    } catch (e) {
+      // only means the choice is not remembered next time
+    }
+  }
+  const startupDevices = savedDevices();
+  mediaEngine.setPreferredDevices({ audioinput: startupDevices.audioinput, videoinput: startupDevices.videoinput });
+  let speakerId = startupDevices.audiooutput || '';
+
+  // Everyone's voice plays from their video tile; music from the shared audio element
+  function applySpeaker(element) {
+    if (typeof element.setSinkId !== 'function') return Promise.resolve();
+    return element.setSinkId(speakerId === 'default' ? '' : speakerId).catch(e => console.warn('Cannot use this speaker:', e));
+  }
+  function applySpeakerEverywhere() {
+    return Promise.all([sharedAudioElement, ...videoGrid.querySelectorAll('.peer-tile video')].map(applySpeaker));
+  }
+  applySpeaker(sharedAudioElement);
+
+  async function switchDevice(select, kind) {
+    const deviceId = select.value;
+    const previous = select.dataset.current || '';
+    try {
+      if (kind === 'audiooutput') {
+        speakerId = deviceId;
+        await applySpeakerEverywhere();
+      } else if (clientCore.currentUser && (mediaEngine.localStream || mediaEngine.rawAudioTrack)) {
+        if (kind === 'audioinput') {
+          await mediaEngine.switchMicrophone(deviceId);
+        } else {
+          await mediaEngine.switchCamera(deviceId);
+          if (!isScreenSharing) localVideo.srcObject = mediaEngine.localStream;
+        }
+      } else {
+        mediaEngine.setPreferredDevices({ [kind]: deviceId });
+      }
+      saveDevice(kind, deviceId);
+      select.dataset.current = deviceId;
+    } catch (e) {
+      console.warn(`Could not switch ${kind}:`, e);
+      showToast('That device could not be opened; the previous one is still in use.');
+      select.value = previous;
+      deviceMenus.forEach(menu => menu.render());
+    }
+  }
 
   if (btnDeviceSettings) {
     btnDeviceSettings.addEventListener('click', () => {
@@ -1123,6 +1408,13 @@
   const deviceMenus = [selectAudioInput, selectVideoInput, selectAudioOutput]
     .filter(Boolean)
     .map(enhanceSelect);
+  selectAudioInput.addEventListener('change', () => switchDevice(selectAudioInput, 'audioinput'));
+  selectVideoInput.addEventListener('change', () => switchDevice(selectVideoInput, 'videoinput'));
+  selectAudioOutput.addEventListener('change', () => switchDevice(selectAudioOutput, 'audiooutput'));
+  // A headset plugged in or out while the settings are open
+  navigator.mediaDevices?.addEventListener?.('devicechange', () => {
+    if (!modalSettings.classList.contains('hidden')) populateDeviceList();
+  });
 
   // --- Server calculator: what server to rent for a given use (model in serverSizing.js) ---
   const modalCalculator = document.getElementById('modal-calculator');
@@ -1212,23 +1504,31 @@
     if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
-      selectAudioInput.innerHTML = '';
-      selectVideoInput.innerHTML = '';
-      selectAudioOutput.innerHTML = '';
+      const selects = { audioinput: selectAudioInput, videoinput: selectVideoInput, audiooutput: selectAudioOutput };
+      Object.values(selects).forEach(select => { select.innerHTML = ''; });
 
       devices.forEach(d => {
+        const select = selects[d.kind];
+        if (!select) return;
         const opt = document.createElement('option');
         opt.value = d.deviceId;
         opt.textContent = d.label || `${d.kind} (${d.deviceId.slice(0, 5)}...)`;
-
-        if (d.kind === 'audioinput') {
-          selectAudioInput.appendChild(opt);
-        } else if (d.kind === 'videoinput') {
-          selectVideoInput.appendChild(opt);
-        } else if (d.kind === 'audiooutput') {
-          selectAudioOutput.appendChild(opt);
-        }
+        select.appendChild(opt);
       });
+
+      // Show the device in use: the one chosen (if still connected), else what the call actually uses
+      const inUse = mediaEngine.currentDevices();
+      const saved = savedDevices();
+      const choose = (kind, ...candidates) => {
+        const select = selects[kind];
+        const ids = Array.from(select.options, o => o.value);
+        const pick = candidates.find(id => id && ids.includes(id));
+        if (pick) select.value = pick;
+        select.dataset.current = select.value;
+      };
+      choose('audioinput', saved.audioinput, inUse.audioinput);
+      choose('videoinput', saved.videoinput, inUse.videoinput);
+      choose('audiooutput', speakerId, 'default');
       deviceMenus.forEach(menu => menu.render());
     } catch (e) {
       console.warn('Could not enumerate media devices:', e);

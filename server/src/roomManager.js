@@ -19,10 +19,14 @@ function createIdleMusicState() {
     isPlaying: false,
     playedBy: null, // { id, username }
     trackInfo: null,
+    trackId: null, // changes with every new track, so clients know when they already have its audio
     currentTime: 0,
     startedAt: null
   };
 }
+
+// What this server offers beyond the original protocol (sent in auth_success)
+const SERVER_FEATURES = ['music-resume', 'music-light'];
 
 // Keep only the fields clients render; audio must be an inline audio data URL
 function sanitizeTrackInfo(trackInfo, fallbackArtist) {
@@ -45,12 +49,14 @@ class RoomManager {
     this.onParticipantRemoved = null; // (user) => void, called after every leave or kick
   }
 
-  addParticipant({ id, username, role, permissions, ws }) {
+  addParticipant({ id, username, role, permissions, ws, capabilities = [] }) {
     const user = {
       id,
       username,
       role: role || Role.USER,
       permissions: { ...permissions },
+      // e.g. 'music-light': the client keeps a track's audio, so control updates need not repeat it
+      capabilities: new Set(capabilities),
       mediaState: {
         audio: false,
         video: false,
@@ -206,16 +212,34 @@ class RoomManager {
     this.broadcastMusicState();
   }
 
-  broadcastMusicState() {
-    this.broadcast({
-      type: MessageType.MUSIC_STATE,
-      musicState: this.getMusicStateForClient()
-    });
+  /**
+   * Sends the music state to everyone. The song itself (up to ~25 MB) goes out only with a new
+   * track (`withAudio`); pause, resume, seek and stop reach clients that keep the audio
+   * ('music-light') as a few bytes. Older clients always get the full state, as they expect.
+   */
+  broadcastMusicState({ withAudio = false } = {}) {
+    let full = null;
+    let light = null;
+    for (const user of this.participants.values()) {
+      if (!user.ws || user.ws.readyState !== 1 /* OPEN */) continue;
+      if (withAudio || !user.capabilities.has('music-light')) {
+        full = full || JSON.stringify({ type: MessageType.MUSIC_STATE, musicState: this.getMusicStateForClient() });
+        user.ws.send(full);
+      } else {
+        light = light || JSON.stringify({ type: MessageType.MUSIC_STATE, musicState: this.getMusicStateForClient({ withAudio: false }) });
+        user.ws.send(light);
+      }
+    }
   }
 
   // Includes the playback position at send time so clients need not trust their own clocks
-  getMusicStateForClient() {
-    return { ...this.musicState, position: this.getMusicPosition() };
+  getMusicStateForClient({ withAudio = true } = {}) {
+    const state = { ...this.musicState, position: this.getMusicPosition() };
+    if (!withAudio && state.trackInfo && state.trackInfo.audioDataUrl) {
+      const { audioDataUrl, ...trackInfo } = state.trackInfo;
+      state.trackInfo = trackInfo;
+    }
+    return state;
   }
 
   // Current playback position in seconds
@@ -223,6 +247,10 @@ class RoomManager {
     const { currentTime, startedAt, isPlaying } = this.musicState;
     const elapsed = isPlaying && startedAt ? (Date.now() - startedAt) / 1000 : 0;
     return (currentTime || 0) + elapsed;
+  }
+
+  static get features() {
+    return SERVER_FEATURES;
   }
 
   // Music state without the (potentially huge) embedded audio payload, for polling clients
@@ -259,11 +287,12 @@ class RoomManager {
         username: user.username
       },
       trackInfo: sanitizeTrackInfo(trackInfo, user.username),
+      trackId: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
       currentTime: 0,
       startedAt: Date.now()
     };
 
-    this.broadcastMusicState();
+    this.broadcastMusicState({ withAudio: true });
 
     return { success: true, musicState: this.musicState };
   }
@@ -310,6 +339,26 @@ class RoomManager {
     this.musicState.startedAt = null;
     this.broadcastMusicState();
 
+    return { success: true, musicState: this.musicState };
+  }
+
+  // Continue a paused track from where it was paused (player or admin)
+  resumeMusic(userId) {
+    const user = this.participants.get(userId);
+    if (!user) return { success: false, message: 'User not found' };
+
+    const isPlayer = this.musicState.playedBy && this.musicState.playedBy.id === userId;
+    if (!isPlayer && user.role !== Role.ADMIN) {
+      return { success: false, message: 'Permission denied.' };
+    }
+    if (!this.musicState.playedBy) {
+      return { success: false, message: 'No music is currently playing.' };
+    }
+    if (!this.musicState.isPlaying) {
+      this.musicState.isPlaying = true;
+      this.musicState.startedAt = Date.now();
+      this.broadcastMusicState();
+    }
     return { success: true, musicState: this.musicState };
   }
 

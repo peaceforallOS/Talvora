@@ -492,7 +492,10 @@ wss.on('connection', (ws, req) => {
         username: validation.user.username,
         role: validation.user.role,
         permissions: validation.user.permissions,
-        ws
+        ws,
+        capabilities: Array.isArray(msg.capabilities)
+          ? msg.capabilities.filter(c => typeof c === 'string' && c.length <= 40).slice(0, 20)
+          : []
       });
 
       // Send auth success and current room snapshot to the joining user
@@ -502,7 +505,8 @@ wss.on('connection', (ws, req) => {
         roomState: {
           roomId: roomManager.roomId,
           participants: roomManager.getAllPublicUsers(),
-          musicState: roomManager.getMusicStateForClient()
+          musicState: roomManager.getMusicStateForClient(),
+          features: RoomManager.features
         },
         iceServers: turnRelay.getIceServers(req.headers.host, currentUser.id)
       }));
@@ -638,10 +642,12 @@ wss.on('connection', (ws, req) => {
             message: res.message
           }));
         }
-      } else if (action === 'pause' || action === 'seek') {
+      } else if (action === 'pause' || action === 'seek' || action === 'resume') {
         const res = action === 'pause'
           ? roomManager.pauseMusic(currentUser.id)
-          : roomManager.seekMusic(currentUser.id, time);
+          : action === 'resume'
+            ? roomManager.resumeMusic(currentUser.id)
+            : roomManager.seekMusic(currentUser.id, time);
         if (!res.success) {
           ws.send(JSON.stringify({
             type: MessageType.MUSIC_ERROR,

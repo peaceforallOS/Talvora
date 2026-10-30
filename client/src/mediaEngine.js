@@ -13,6 +13,9 @@ const VOICE_HOLD_MS = 400; // keep the indicator on between words
 const METER_FLOOR_DB = -65;
 const METER_CEILING_DB = -15;
 
+const AUDIO_CONSTRAINTS = { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1, sampleRate: AUDIO_SAMPLE_RATE };
+const VIDEO_CONSTRAINTS = { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { max: 30 } };
+
 // Tracks how loud a signal is and whether someone is talking on it
 class VoiceDetector {
   constructor(audioContext, sourceNode) {
@@ -59,6 +62,9 @@ class MediaEngine {
     this.remoteStreams = new Map(); // peerId -> MediaStream aggregating that peer's tracks
     this.audioContext = null;
     this.rawAudioTrack = null; // microphone track before noise suppression
+    this.micSource = null; // its node in the processing graph, replaced when the microphone changes
+    this.micInput = null; // first processing node (the high-pass filter)
+    this.preferredDevices = {}; // { audioinput, videoinput } ids chosen in the settings
     this.noiseSuppressor = null;
     this.localDetector = null;
     this.peerDetectors = new Map(); // peerId -> { detector, source, track }
@@ -84,12 +90,12 @@ class MediaEngine {
     // destroy() bumps the generation; a capture that resolves afterwards is discarded
     const generation = this.generation;
     let stream;
+    // The devices chosen earlier, if still connected (ideal: falls back to the default otherwise)
+    const preferred = kind => (this.preferredDevices[kind] ? { deviceId: { ideal: this.preferredDevices[kind] } } : {});
     try {
       stream = await navigator.mediaDevices.getUserMedia({
-        audio: audio
-          ? { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1, sampleRate: AUDIO_SAMPLE_RATE }
-          : false,
-        video: video ? { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { max: 30 } } : false
+        audio: audio ? { ...AUDIO_CONSTRAINTS, ...preferred('audioinput') } : false,
+        video: video ? { ...VIDEO_CONSTRAINTS, ...preferred('videoinput') } : false
       });
     } catch (err) {
       console.warn('getUserMedia failed, trying audio only fallback:', err);
@@ -193,6 +199,8 @@ class MediaEngine {
     this.audioContext = ctx;
     this.noiseSuppressor = noiseSuppressor;
     this.rawAudioTrack = rawTrack;
+    this.micSource = source;
+    this.micInput = highpass;
     stream.removeTrack(rawTrack);
     stream.addTrack(processedTrack);
     this.localDetector = new VoiceDetector(ctx, cleaned);
@@ -284,6 +292,70 @@ class MediaEngine {
       return track.enabled;
     }
     return false;
+  }
+
+  // --- Device selection (settings) ---
+
+  setPreferredDevices(devices) {
+    this.preferredDevices = { ...this.preferredDevices, ...devices };
+  }
+
+  // Ids of the microphone and camera in use (to show in the settings)
+  currentDevices() {
+    const mic = this.rawAudioTrack || this.localStream?.getAudioTracks()[0];
+    const cam = this.localStream?.getVideoTracks()[0];
+    return { audioinput: mic?.getSettings().deviceId || null, videoinput: cam?.getSettings().deviceId || null };
+  }
+
+  /**
+   * Switch to another microphone during the call. With noise suppression running, only the
+   * source of the processing graph changes, so peers keep receiving the same track; mute stays.
+   */
+  async switchMicrophone(deviceId) {
+    const current = this.rawAudioTrack || this.localStream?.getAudioTracks()[0];
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { ...AUDIO_CONSTRAINTS, deviceId: { exact: deviceId } } });
+    const track = stream.getAudioTracks()[0];
+    track.enabled = current ? current.enabled : true;
+    this.setPreferredDevices({ audioinput: deviceId });
+
+    if (this.audioContext && this.micInput) {
+      const source = this.audioContext.createMediaStreamSource(new MediaStream([track]));
+      source.connect(this.micInput);
+      if (this.micSource) this.micSource.disconnect();
+      this.micSource = source;
+      this.rawAudioTrack = track;
+    } else {
+      if (!this.localStream) this.localStream = new MediaStream();
+      if (current) this.localStream.removeTrack(current);
+      this.localStream.addTrack(track);
+      for (const pc of this.peerConnections.values()) {
+        const sender = current && pc.getSenders().find(s => s.track === current);
+        if (sender) await sender.replaceTrack(track);
+        else if (pc.signalingState !== 'closed') pc.addTrack(track, this.localStream);
+      }
+    }
+    if (current) current.stop();
+    return track;
+  }
+
+  // Switch to another camera during the call; while screen sharing, peers keep seeing the screen
+  async switchCamera(deviceId) {
+    const current = this.localStream?.getVideoTracks()[0] || null;
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { ...VIDEO_CONSTRAINTS, deviceId: { exact: deviceId } } });
+    const track = stream.getVideoTracks()[0];
+    track.enabled = current ? current.enabled : true;
+    this.setPreferredDevices({ videoinput: deviceId });
+
+    if (!this.localStream) this.localStream = new MediaStream();
+    if (current) this.localStream.removeTrack(current);
+    this.localStream.addTrack(track);
+    for (const pc of this.peerConnections.values()) {
+      const sender = current && pc.getSenders().find(s => s.track === current);
+      if (sender) await sender.replaceTrack(track);
+      else if (!current && !this.screenStream && pc.signalingState !== 'closed') pc.addTrack(track, this.localStream);
+    }
+    if (current) current.stop();
+    return track;
   }
 
   async startScreenShare() {
@@ -469,6 +541,8 @@ class MediaEngine {
     this.audioContext = null;
     if (this.rawAudioTrack) this.rawAudioTrack.stop();
     this.rawAudioTrack = null;
+    this.micSource = null;
+    this.micInput = null;
     if (this.localStream) {
       this.localStream.getTracks().forEach(t => t.stop());
       this.localStream = null;

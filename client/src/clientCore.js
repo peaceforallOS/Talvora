@@ -115,7 +115,9 @@ class ClientCore {
           type: 'auth',
           username: username.trim(),
           token: parsedToken,
-          roomId: detectedRoom
+          roomId: detectedRoom,
+          // This client keeps a track's audio: pause/resume/seek updates may leave it out
+          capabilities: ['music-light']
         });
       };
 
@@ -150,6 +152,17 @@ class ClientCore {
         message: err.message
       });
     }
+  }
+
+  // Control updates for the same track (pause, resume, seek) arrive without the song: keep the one we have
+  static withKnownAudio(next, previous) {
+    const audio = previous?.trackInfo?.audioDataUrl;
+    if (!next?.trackInfo || next.trackInfo.audioDataUrl || !audio || !next.trackId || next.trackId !== previous.trackId) return next;
+    return { ...next, trackInfo: { ...next.trackInfo, audioDataUrl: audio } };
+  }
+
+  supportsFeature(name) {
+    return (this.roomState.features || []).includes(name);
   }
 
   // https:// servers, or plain http:// only to a server on this computer (development)
@@ -202,7 +215,8 @@ class ClientCore {
         this.roomState = {
           roomId: msg.roomState.roomId,
           participants: msg.roomState.participants || [],
-          musicState: msg.roomState.musicState || null
+          musicState: msg.roomState.musicState || null,
+          features: Array.isArray(msg.roomState.features) ? msg.roomState.features : [] // empty on older servers
         };
         this.onAuthSuccess(this.currentUser, this.roomState);
 
@@ -284,8 +298,8 @@ class ClientCore {
 
       // 8. Music State Sync
       case 'music_state':
-        this.roomState.musicState = msg.musicState;
-        this.onMusicState(msg.musicState);
+        this.roomState.musicState = ClientCore.withKnownAudio(msg.musicState, this.roomState.musicState);
+        this.onMusicState(this.roomState.musicState);
         break;
 
       case 'music_error':
