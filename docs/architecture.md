@@ -247,9 +247,11 @@ Each user entity in the room state contains a `permissions` object:
 
 ### Server calculator
 The join screen's "Planning a server?" opens a calculator (`client/src/serverSizing.js`, tested in
-`client/test/serverSizing.test.js`). Inputs: people per call, cameras on, video quality, screen sharing, where people
-join from (share of connections that need the TURN relay: LAN 0%, homes 10%, mixed 20%, strict networks 40%), music
-use and song size, hours per month. Model: signaling CPU interpolated from `docs/load-test-report.md`; relayed media =
+`client/test/serverSizing.test.js`). The user enters only the number of people per call; `estimateForUsers` assumes a
+busy typical call (up to 6 cameras at 720p, one screen share, mixed home/office networks, occasional music) and shows
+traffic per hour of calls. The underlying `estimateServer` takes all factors: cameras, video quality, screen sharing,
+where people join from (share of connections that need the TURN relay: LAN 0%, homes 10%, mixed 20%, strict networks
+40%), music use and song size, hours per month. Model: signaling CPU interpolated from `docs/load-test-report.md`; relayed media =
 relay share x full-mesh streams (audio 0.05, video 0.5 / 1.5 / 2.5, screen 1.5 Mbit/s per stream), relay CPU from
 packets per second (estimated 60k pps per core); everything on one core (single-threaded process), so at most 2 vCPU
 is recommended; music sends each new song (base64) to every participant and buffers it once per
@@ -307,6 +309,7 @@ Video_Call_88/
 │   └── release-key.pub.pem     # Public release key the server checks releases with
 ├── docs/
 │   ├── architecture.md         # This document
+│   ├── RELEASING.md            # How new versions are built, signed and published (maintainers)
 │   ├── extra.txt               # Extra features (spec instruction 8)
 │   └── load-test-report.md     # Load test results (scripts/load-test.js)
 ├── scripts/

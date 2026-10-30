@@ -64,6 +64,20 @@ assert.strictEqual(run({ cameras: 50 }).perParticipant.cameraUploadMbps, run({ c
   'Cameras are capped at the number of people');
 console.log('✓ Test 7 Passed: Invalid input handled');
 
+// 8. The app's calculator asks only for the number of people: a busy typical call is assumed
+const { estimateForUsers, TYPICAL_CALL } = require('../src/serverSizing');
+const eight = estimateForUsers(8);
+assert.deepStrictEqual(eight, estimateServer({
+  participants: 8, cameras: TYPICAL_CALL.maxCameras, screenShares: 1, videoQuality: 'standard',
+  network: 'mixed', music: 'sometimes', musicFileMb: 8, hoursPerMonth: 0
+}), 'Only the number of people may vary');
+assert.ok(eight.fits && eight.recommendation.trafficGbPerHour > 0);
+assert.strictEqual(estimateForUsers(3).load.relayMbps < estimateForUsers(20).load.relayMbps, true, 'More people, more traffic');
+assert.strictEqual(estimateForUsers(1).warnings.some(w => w.level === 'bad'), false, 'One person is fine');
+assert.strictEqual(estimateForUsers(100).fits, false, 'Too many people for one call are still flagged');
+assert.ok(estimateForUsers(26).fits, 'The largest workable call gets a recommendation');
+console.log('✓ Test 8 Passed: Calculator by number of people only');
+
 console.log('\n========================================');
 console.log(' ALL SERVER CALCULATOR TESTS PASSED!    ');
 console.log('========================================\n');

@@ -124,7 +124,8 @@ function estimateServer(input) {
   const uploadMbps = relayMbps + signalingMbps + musicMbps;
   const downloadMbps = relayMbps + signalingMbps * 0.1;
   // Providers usually count outgoing traffic; incoming is about the relay share again
-  const monthlyTrafficGb = (uploadMbps * 3600 * hours) / 8 / 1000;
+  const trafficGbPerHour = (uploadMbps * 3600) / 8 / 1000;
+  const monthlyTrafficGb = trafficGbPerHour * hours;
   // A song should reach everyone within ~15 s; never recommend less than 100 Mbit/s
   const musicBurstMbps = music.actionsPerHour ? (n * musicMb * 8) / 15 : 0;
   const linkMbps = [100, 200, 500, 1000, 2500, 10000].find(speed => speed >= Math.max(uploadMbps * 1.5, musicBurstMbps)) || 10000;
@@ -145,17 +146,17 @@ function estimateServer(input) {
     warnings.push({ level: 'warn', text: `With ${n} people every computer keeps ${peers} connections open. That works on good computers and connections; older laptops and phones may struggle.` });
   }
   if (cameras > SIZING.meshCamerasMax) {
-    warnings.push({ level: 'bad', text: `${cameras} cameras is too many for a direct (mesh) call: every camera is sent separately to every participant. Above about ${SIZING.meshCamerasMax} cameras the participants' own computers and connections become the limit, not the server. Turn some cameras off or lower the video quality.` });
+    warnings.push({ level: 'bad', text: `${cameras} cameras is too many for a direct (mesh) call: every camera is sent separately to every participant. Above about ${SIZING.meshCamerasMax} cameras the participants' own computers and connections become the limit, not the server. Ask people to turn some cameras off.` });
   } else if (cameras > SIZING.meshCamerasWarn) {
-    warnings.push({ level: 'warn', text: `${cameras} cameras is near the limit of a direct (mesh) call; Low quality helps everyone's connection.` });
+    warnings.push({ level: 'warn', text: `${cameras} cameras is near the limit of a direct (mesh) call; fewer cameras on helps everyone's connection.` });
   }
   if (meshOk && senderUploadMbps > 10) {
-    warnings.push({ level: 'warn', text: `Each person with a camera on (or sharing their screen) needs about ${round(senderUploadMbps)} Mbit/s upload. Many home connections have less; lower the video quality or the number of cameras.` });
+    warnings.push({ level: 'warn', text: `Each person with a camera on (or sharing their screen) needs about ${round(senderUploadMbps)} Mbit/s upload. Many home connections have less; with fewer cameras on, everyone needs less.` });
   }
   if (meshOk && n > SIZING.testedUsers) {
     warnings.push({ level: 'bad', text: `More than ${SIZING.testedUsers.toLocaleString('en')} people is beyond what one server was tested with.` });
   } else if (meshOk && corePct > 85) {
-    warnings.push({ level: 'bad', text: 'Too much relayed traffic for one server process, whatever its size: the server is single-threaded. Lower the video quality or the number of cameras.' });
+    warnings.push({ level: 'bad', text: 'Too much relayed traffic for one server process, whatever its size: the server is single-threaded. Fewer cameras on, or splitting into smaller calls on separate servers, helps.' });
   } else if (meshOk && corePct > 60) {
     warnings.push({ level: 'warn', text: 'Close to the limit of one server process. Choose a CPU with high single-core speed (3 GHz or more); extra cores do not help.' });
   }
@@ -175,6 +176,7 @@ function estimateServer(input) {
       diskGb: SIZING.diskGb,
       linkMbps,
       monthlyTrafficGb: round(monthlyTrafficGb, 0),
+      trafficGbPerHour: round(trafficGbPerHour, 1),
       cpuNote: vcpu === 1 ? 'any current CPU' : 'high single-core speed (3 GHz or more)'
     },
     load: {
@@ -196,7 +198,32 @@ function estimateServer(input) {
   };
 }
 
-return { SIZING, VIDEO_QUALITY, NETWORKS, MUSIC_USE, estimateServer };
+// The app's calculator asks only how many people join a call; the rest is a busy, typical call,
+// on the generous side so the advice errs toward enough server
+const TYPICAL_CALL = {
+  maxCameras: 6,
+  screenShares: 1,
+  videoQuality: 'standard',
+  network: 'mixed',
+  music: 'sometimes',
+  musicFileMb: 8
+};
+
+function estimateForUsers(participants) {
+  const n = clamp(Math.round(Number(participants) || 0), 1, 5000);
+  return estimateServer({
+    participants: n,
+    cameras: Math.min(n, TYPICAL_CALL.maxCameras),
+    screenShares: n > 1 ? TYPICAL_CALL.screenShares : 0,
+    videoQuality: TYPICAL_CALL.videoQuality,
+    network: TYPICAL_CALL.network,
+    music: TYPICAL_CALL.music,
+    musicFileMb: TYPICAL_CALL.musicFileMb,
+    hoursPerMonth: 0
+  });
+}
+
+return { SIZING, VIDEO_QUALITY, NETWORKS, MUSIC_USE, TYPICAL_CALL, estimateServer, estimateForUsers };
 })();
 
 if (typeof module !== 'undefined' && module.exports) {

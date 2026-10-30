@@ -597,6 +597,7 @@
         <span>${escapeHtml(username.charAt(0).toUpperCase())}</span>
       </div>
       <div class="speaking-ring hidden"></div>
+      <button type="button" class="tile-fullscreen" title="Full screen (double-click)" aria-label="Show ${escapeHtml(username)} full screen">${iconSvg('maximize')}</button>
       <div class="tile-volume" title="How loud ${escapeHtml(username)} is for you (only you)">
         <button type="button" class="tile-volume-btn" aria-label="Mute ${escapeHtml(username)} for me">${iconSvg('volume')}</button>
         <input type="range" class="tile-volume-slider" min="0" max="100" step="5" aria-label="Volume of ${escapeHtml(username)}">
@@ -609,11 +610,33 @@
     `;
     setAvatarHue(tile.querySelector('.avatar-fallback'), username);
     setupTileVolume(tile, username);
+    tile.querySelector('.tile-fullscreen').addEventListener('click', () => toggleTileFullscreen(tile));
+    tile.addEventListener('dblclick', e => {
+      if (!e.target.closest('.tile-volume')) toggleTileFullscreen(tile);
+    });
     applySpeaker(tile.querySelector('video'));
     videoGrid.appendChild(tile);
     updateGridLayout();
     return tile;
   }
+
+  // --- Full screen: a participant's tile (their camera or shared screen) fills the screen; Esc exits
+  function toggleTileFullscreen(tile) {
+    if (document.fullscreenElement === tile) {
+      document.exitFullscreen().catch(() => {});
+    } else {
+      tile.requestFullscreen().catch(e => showToast(`Full screen is not available: ${e.message}`));
+    }
+  }
+
+  document.addEventListener('fullscreenchange', () => {
+    videoGrid.querySelectorAll('.peer-tile').forEach(tile => {
+      const full = document.fullscreenElement === tile;
+      const button = tile.querySelector('.tile-fullscreen');
+      button.innerHTML = iconSvg(full ? 'minimize' : 'maximize');
+      button.title = full ? 'Exit full screen (Esc)' : 'Full screen (double-click)';
+    });
+  });
 
   // --- Per-person volume: each voice plays from that person's tile, so its volume is theirs alone.
   // (Kept at 0-100% on the media element: routing voices through Web Audio to go louder would
@@ -1416,38 +1439,26 @@
     if (!modalSettings.classList.contains('hidden')) populateDeviceList();
   });
 
-  // --- Server calculator: what server to rent for a given use (model in serverSizing.js) ---
+  // --- Server calculator: what server to rent for a number of people (model in serverSizing.js) ---
   const modalCalculator = document.getElementById('modal-calculator');
   const calcForm = document.getElementById('calc-form');
-  const calcField = id => document.getElementById(`calc-${id}`);
-  ['quality', 'screens', 'network', 'music'].forEach(id => enhanceSelect(calcField(id)));
-
-  function formatTraffic(gb) {
-    if (gb >= 1000) return `${Math.round(gb / 100) / 10} TB`;
-    return `${Math.max(1, Math.round(gb))} GB`;
-  }
+  const calcPeople = document.getElementById('calc-participants');
+  const calcPeopleRange = document.getElementById('calc-participants-range');
 
   function formatSpeed(mbps) {
     return mbps >= 1000 ? `${mbps / 1000} Gbit/s` : `${mbps} Mbit/s`;
   }
 
-  function renderCalculator() {
-    const participants = Number(calcField('participants').value);
-    const camerasInput = calcField('cameras');
-    camerasInput.max = String(Math.max(0, participants));
-    const music = calcField('music').value;
-    document.getElementById('calc-music-size-group').classList.toggle('hidden', music === 'none');
+  function formatTrafficPerHour(gb) {
+    return gb < 1 ? `${Math.max(1, Math.round(gb * 1000))} MB / hour` : `${gb} GB / hour`;
+  }
 
-    const result = ServerSizing.estimateServer({
-      participants,
-      cameras: Number(camerasInput.value),
-      screenShares: Number(calcField('screens').value),
-      videoQuality: calcField('quality').value,
-      network: calcField('network').value,
-      music,
-      musicFileMb: Number(calcField('music-size').value),
-      hoursPerMonth: Number(calcField('hours').value)
-    });
+  // The number box and the slider stay in step; the box also takes numbers beyond the slider
+  calcPeopleRange.addEventListener('input', () => { calcPeople.value = calcPeopleRange.value; });
+  calcPeople.addEventListener('input', () => { calcPeopleRange.value = calcPeople.value; });
+
+  function renderCalculator() {
+    const result = ServerSizing.estimateForUsers(Number(calcPeople.value));
     const { recommendation: rec, load, perParticipant } = result;
 
     const verdict = document.getElementById('calc-verdict');
@@ -1460,7 +1471,7 @@
       ['Processor', `${rec.vcpu} vCPU`, rec.cpuNote],
       ['Memory', `${rec.ramGb} GB RAM`, 'any Linux VPS plan'],
       ['Network', formatSpeed(rec.linkMbps), 'port speed'],
-      ['Traffic', `${formatTraffic(rec.monthlyTrafficGb)} / month`, 'outgoing'],
+      ['Traffic', formatTrafficPerHour(rec.trafficGbPerHour), 'outgoing, per hour of calls'],
       ['Storage', `${rec.diskGb} GB SSD`, 'system, app and logs'],
       ['System', 'Ubuntu / Debian', 'any 64-bit Linux works']
     ].map(([label, value, note]) => `
@@ -1493,7 +1504,7 @@
   document.getElementById('btn-open-calculator').addEventListener('click', () => {
     renderCalculator();
     modalCalculator.classList.remove('hidden');
-    calcField('participants').focus();
+    calcPeople.focus();
   });
 
   document.getElementById('btn-close-calculator').addEventListener('click', () => {
@@ -1550,6 +1561,11 @@
   window.addEventListener('keydown', e => {
     // Leave browser shortcuts (Ctrl+C, Cmd+V, ...) alone; call shortcuts only apply inside a room
     if (e.ctrlKey || e.metaKey || e.altKey) return;
+    // Electron, unlike a browser, does not leave full screen on Esc by itself
+    if (e.key === 'Escape' && document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+      return;
+    }
     if (e.key === 'Escape') modalCalculator.classList.add('hidden'); // opened from the join screen
     if (screenRoom.classList.contains('hidden')) return;
 

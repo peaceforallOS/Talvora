@@ -473,9 +473,20 @@ input[type="file"]::file-selector-button {
 .link-button .icon { width: 15px; height: 15px; }
 
 /* Server calculator */
-.modal-card.modal-card-wide { max-width: 860px; }
+.modal-card.modal-card-wide { max-width: 820px; }
 .calc-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 1.5rem; margin-top: 1.25rem; }
-.calc-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+input[type="range"].calc-range { width: 100%; margin-top: 0.85rem; }
+.calc-assumptions {
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.calc-assumptions strong { display: block; margin-bottom: 0.3rem; color: var(--text); font-weight: 600; }
+.calc-assumptions ul { margin: 0 0 0.4rem; padding-left: 1.1rem; }
 .calc-results { display: flex; flex-direction: column; gap: 0.9rem; min-width: 0; }
 .calc-verdict { font-size: 0.95rem; font-weight: 650; }
 .calc-verdict[data-state="bad"] { color: #ffb3b6; }
@@ -937,6 +948,35 @@ input[type="range"]::-moz-range-thumb {
 }
 .status-icon .icon { width: 13px; height: 13px; }
 .status-icon.is-muted { background: var(--danger); color: #fff; }
+
+/* Full screen, top left of each participant's tile: on hover, and always for a shared screen */
+.tile-fullscreen {
+  position: absolute;
+  z-index: 4;
+  top: 0.6rem;
+  left: 0.6rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 50%;
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  color: var(--text);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background-color 0.15s;
+}
+.tile-fullscreen:hover { background: rgba(255, 255, 255, 0.16); }
+.tile-fullscreen:focus-visible { opacity: 1; outline: none; box-shadow: var(--ring); }
+.tile-fullscreen .icon { width: 16px; height: 16px; }
+.peer-tile:hover .tile-fullscreen,
+.peer-tile.is-screen .tile-fullscreen { opacity: 1; }
+.peer-tile:fullscreen { border: none; border-radius: 0; background: #000; cursor: default; }
+.peer-tile:fullscreen video { object-fit: contain; }
+@media (hover: none) { .tile-fullscreen { opacity: 1; } }
 
 /* Per-person volume, top right of each tile: visible on hover, focus, or when muted for me */
 .tile-volume {

@@ -29,6 +29,8 @@
     <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></symbol>
     <symbol id="i-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></symbol>
     <symbol id="i-volume" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></symbol>
+    <symbol id="i-maximize" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></symbol>
+    <symbol id="i-minimize" viewBox="0 0 24 24"><path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/></symbol>
     <symbol id="i-volume-off" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="m22 9-6 6"/><path d="m16 9 6 6"/></symbol>
     <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></symbol>
     <symbol id="i-rewind" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></symbol>
@@ -343,65 +345,26 @@
           <div class="modal-icon"><svg class="icon"><use href="#i-server"/></svg></div>
           <div>
             <h2>Server calculator</h2>
-            <p>Describe your calls and see what server to rent.</p>
+            <p>Enter how many people join a call and see what server to rent.</p>
           </div>
         </div>
 
         <div class="calc-layout">
           <form id="calc-form" class="calc-inputs" autocomplete="off">
-            <div class="calc-row">
-              <div class="form-group">
-                <label for="calc-participants">People in a call</label>
-                <input type="number" id="calc-participants" min="2" max="5000" value="8">
-              </div>
-              <div class="form-group">
-                <label for="calc-cameras">With camera on</label>
-                <input type="number" id="calc-cameras" min="0" max="5000" value="4">
-              </div>
-            </div>
             <div class="form-group">
-              <label for="calc-quality">Video quality</label>
-              <select id="calc-quality" class="device-select" data-icon="video">
-                <option value="low">Low (360p)</option>
-                <option value="standard" selected>Standard (720p)</option>
-                <option value="high">High (720p, sharp)</option>
-              </select>
+              <label for="calc-participants">People in a call</label>
+              <input type="number" id="calc-participants" min="2" max="5000" value="8">
+              <input type="range" id="calc-participants-range" class="calc-range" min="2" max="40" step="1" value="8" aria-label="People in a call">
             </div>
-            <div class="form-group">
-              <label for="calc-screens">Sharing their screen at the same time</label>
-              <select id="calc-screens" class="device-select" data-icon="screen">
-                <option value="0" selected>Nobody</option>
-                <option value="1">One person</option>
-                <option value="2">Two people</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label for="calc-network">Where people join from</label>
-              <select id="calc-network" class="device-select" data-icon="globe">
-                <option value="lan">Same local network as the server</option>
-                <option value="home" selected>Mostly homes and mobile</option>
-                <option value="mixed">Mixed homes and offices</option>
-                <option value="strict">Mostly offices, schools, strict firewalls</option>
-              </select>
-              <span class="field-hint">Strict networks block direct connections, so the server relays their audio and video.</span>
-            </div>
-            <div class="calc-row">
-              <div class="form-group">
-                <label for="calc-music">Music</label>
-                <select id="calc-music" class="device-select" data-icon="music">
-                  <option value="none" selected>No music</option>
-                  <option value="sometimes">Sometimes</option>
-                  <option value="often">Often</option>
-                </select>
-              </div>
-              <div class="form-group" id="calc-music-size-group">
-                <label for="calc-music-size">Song size (MB)</label>
-                <input type="number" id="calc-music-size" min="1" max="18" value="8">
-              </div>
-            </div>
-            <div class="form-group">
-              <label for="calc-hours">Hours of calls per month</label>
-              <input type="number" id="calc-hours" min="0" max="744" value="40">
+            <div class="calc-assumptions">
+              <strong>The estimate assumes a busy call</strong>
+              <ul>
+                <li>up to 6 people with their camera on (standard 720p video)</li>
+                <li>one person sharing their screen</li>
+                <li>people joining from homes and offices (some need the server's relay)</li>
+                <li>music played now and then</li>
+              </ul>
+              <span>A quieter call needs less, so this errs on the safe side.</span>
             </div>
           </form>
 
