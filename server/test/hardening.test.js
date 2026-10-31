@@ -1,6 +1,6 @@
 /**
  * Server Hardening & Regression Tests
- * Malformed input resilience, session handling, music lock semantics, admin API sanitizing
+ * Malformed input resilience, session handling, message size limits, admin API sanitizing
  */
 
 const assert = require('assert');
@@ -139,38 +139,24 @@ async function runTests() {
   assert.strictEqual(omids[0].id, omid2.user.id, 'Newest session was not kept');
   console.log('✓ Test 6 Passed: Re-joining replaces the stale session');
 
-  // Test 7: Pausing keeps the music lock; seek reports a fresh position
+  // Test 7: A message larger than chat or call setup ever needs closes only the sender's connection
   const reza = await join('Reza');
-  omid2.ws.send(JSON.stringify({ type: MessageType.MUSIC_ACTION, action: 'play', trackInfo: { title: 'Song', audioDataUrl: 'data:audio/mp3;base64,AAAA' } }));
-  await waitForMessage(reza.ws, MessageType.MUSIC_STATE);
-  omid2.ws.send(JSON.stringify({ type: MessageType.MUSIC_ACTION, action: 'pause' }));
-  const paused = await waitForMessage(reza.ws, MessageType.MUSIC_STATE);
-  assert.strictEqual(paused.musicState.isPlaying, false, 'Pause did not pause');
-  assert.strictEqual(paused.musicState.playedBy.id, omid2.user.id, 'Pause released the lock');
+  const sender = await join('Sender');
+  const closed = new Promise(resolve => sender.ws.on('close', code => resolve(code)));
+  sender.ws.send(JSON.stringify({ type: MessageType.CHAT_SEND, mode: 'public', text: 'x'.repeat(300 * 1024) }));
+  assert.strictEqual(await closed, 1009, 'Oversized message not refused');
+  await sleep(150);
+  assert.ok(roomManager.getParticipant(reza.user.id), 'Other participants must stay connected');
+  console.log('✓ Test 7 Passed: Oversized messages are refused without affecting others');
 
-  reza.ws.send(JSON.stringify({ type: MessageType.MUSIC_ACTION, action: 'play', trackInfo: { title: 'Steal' } }));
-  const stealErr = await waitForMessage(reza.ws, MessageType.MUSIC_ERROR);
-  assert.ok(stealErr.message.includes('Omid'), 'Another user took the lock of a paused track');
+  // Test 8: Message types the server does not know (e.g. from other app versions) are ignored
+  reza.ws.send(JSON.stringify({ type: 'no_such_message', payload: 'x' }));
+  reza.ws.send(JSON.stringify({ type: MessageType.CHAT_SEND, mode: 'public', text: 'still here' }));
+  const echoed = await waitForMessage(reza.ws, MessageType.CHAT_DELIVER);
+  assert.strictEqual(echoed.message.text, 'still here', 'Connection broken by an unknown message type');
+  console.log('✓ Test 8 Passed: Unknown message types are ignored');
 
-  omid2.ws.send(JSON.stringify({ type: MessageType.MUSIC_ACTION, action: 'seek', time: 42 }));
-  const seeked = await waitForMessage(reza.ws, MessageType.MUSIC_STATE);
-  assert.strictEqual(seeked.musicState.position, 42, 'Seek position not reported');
-  console.log('✓ Test 7 Passed: Paused music keeps its lock and seek position syncs');
-
-  // Test 8: Admin polling does not receive the embedded audio payload
-  const info = JSON.parse((await request('GET', '/api/admin/info')).data);
-  assert.strictEqual(info.musicState.trackInfo.title, 'Song', 'Track title missing from admin info');
-  assert.ok(!('audioDataUrl' in info.musicState.trackInfo), 'Admin info includes the audio payload');
-  console.log('✓ Test 8 Passed: Admin info omits embedded audio data');
-
-  // Test 9: A paused DJ leaving releases the music lock
-  const resetPromise = waitForMessage(reza.ws, MessageType.MUSIC_STATE);
-  omid2.ws.close();
-  const reset = await resetPromise;
-  assert.strictEqual(reset.musicState.playedBy, null, 'Lock not released when the paused DJ left');
-  console.log('✓ Test 9 Passed: Music lock released when the DJ leaves');
-
-  // Test 10: Admin permission API ignores unknown keys and non-boolean values
+  // Test 9: Admin permission API ignores unknown keys and non-boolean values
   const permRes = await request('POST', '/api/admin/permissions', {
     userId: reza.user.id,
     permissions: { can_chat: false, can_video: 'no', role: 'admin' }
@@ -180,9 +166,9 @@ async function runTests() {
   assert.strictEqual(rezaUser.permissions.can_chat, false, 'Valid permission not applied');
   assert.strictEqual(rezaUser.permissions.can_video, true, 'Non-boolean permission applied');
   assert.ok(!('role' in rezaUser.permissions), 'Unknown permission key stored');
-  console.log('✓ Test 10 Passed: Admin permission updates sanitized');
+  console.log('✓ Test 9 Passed: Admin permission updates sanitized');
 
-  // Test 11: Static file serving cannot escape its directories
+  // Test 10: Static file serving cannot escape its directories
   for (const p of ['/client/..%2f..%2fserver/data/server-config.json', '/shared/%2e%2e/server/data/server-config.json', '/../server/data/server-config.json']) {
     const res = await request('GET', p);
     assert.ok(!res.data.includes('serverSecret'), `Secret leaked via ${p}`);
@@ -192,9 +178,9 @@ async function runTests() {
   for (const p of ['/join', '/app.js', '/admin']) {
     assert.strictEqual((await request('GET', p)).headers['cache-control'], 'no-cache', `${p} may be served stale from cache`);
   }
-  console.log('✓ Test 11 Passed: Static file serving confined to its directories and never stale');
+  console.log('✓ Test 10 Passed: Static file serving confined to its directories and never stale');
 
-  // Test 12: Without HTTPS the server only listens on this computer and refuses to serve plain HTTP to the network
+  // Test 11: Without HTTPS the server only listens on this computer and refuses to serve plain HTTP to the network
   assert.strictEqual(server.address().address, '127.0.0.1', 'Plain HTTP must only listen on this computer');
   const { spawnSync } = require('child_process');
   const env = { ...process.env, HOST: '0.0.0.0', PORT: '8093', TURN_PORT: '0' };
@@ -203,7 +189,7 @@ async function runTests() {
   const refused = spawnSync(process.execPath, [require('path').join(__dirname, '../src/index.js')], { env, encoding: 'utf8', timeout: 15000 });
   assert.strictEqual(refused.status, 1, 'Server started plain HTTP on the network');
   assert.ok(refused.stderr.includes('must be encrypted'), 'Refusal reason not explained');
-  console.log('✓ Test 12 Passed: Plain HTTP never reaches the network without an explicit opt-out');
+  console.log('✓ Test 11 Passed: Plain HTTP never reaches the network without an explicit opt-out');
 
   admin.ws.close();
   reza.ws.close();

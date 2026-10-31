@@ -33,12 +33,7 @@ simple and elegant:
      camera and microphone from a clean settings dropdown, featuring a live mic test 
      meter and video preview window.
 
-6. Synchronized Music Playback Progress & Scrubbing
-   - Description: When a user plays music, playback timing and track progress are 
-     continuously synchronized across all clients so all participants hear the audio 
-     in sync. The active DJ or Admin can seek/scrub through the track.
-
-7. Search & Filter in Participant Directory
+6. Search & Filter in Participant Directory
    - Description: A quick search bar within the user management panel and in-app 
      participant list allows instant lookup of users in large rooms to easily manage 
      permissions or initiate 1-to-1 chats.

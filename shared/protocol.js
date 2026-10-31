@@ -11,7 +11,6 @@ const MessageType = {
   AUTH: 'auth',
   INVITE_GENERATE: 'invite_generate',
   CHAT_SEND: 'chat_send',
-  MUSIC_ACTION: 'music_action',
   MEDIA_STATE_CHANGE: 'media_state_change',
   SIGNAL: 'signal',
 
@@ -23,8 +22,6 @@ const MessageType = {
   ROOM_STATE: 'room_state',
   PERMISSIONS_UPDATED: 'permissions_updated',
   CHAT_DELIVER: 'chat_deliver',
-  MUSIC_STATE: 'music_state',
-  MUSIC_ERROR: 'music_error',
   INVITE_GENERATED: 'invite_generated',
   KICKED: 'kicked'
 };
@@ -48,7 +45,6 @@ function createDefaultPermissions(isAdmin = false) {
     can_audio: true,
     can_video: true,
     can_chat: true,
-    can_play_music: true,
     can_invite: !!isAdmin // By default, only admin can invite
   };
 }

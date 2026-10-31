@@ -99,7 +99,9 @@ class AuthService {
       for (const [name, perms] of Object.entries(data.permissionOverrides)) {
         // Only this process changes permissions: what it holds is never older than the disk
         if (perms && typeof perms === 'object' && !(name in this.permissionOverrides)) {
-          this.permissionOverrides[name] = { ...perms };
+          // Only permissions that still exist (files from older versions may hold removed ones)
+          const known = Object.keys(createDefaultPermissions());
+          this.permissionOverrides[name] = Object.fromEntries(Object.entries(perms).filter(([key]) => known.includes(key)));
         }
       }
     }

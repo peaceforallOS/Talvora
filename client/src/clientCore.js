@@ -11,8 +11,6 @@ class ClientCore {
     this.onRoomState = options.onRoomState || (() => {});
     this.onPermissionsUpdated = options.onPermissionsUpdated || (() => {});
     this.onChatMessage = options.onChatMessage || (() => {});
-    this.onMusicState = options.onMusicState || (() => {});
-    this.onMusicError = options.onMusicError || (() => {});
     this.onInviteGenerated = options.onInviteGenerated || (() => {});
     this.onKicked = options.onKicked || (() => {});
     this.onConnectionStatus = options.onConnectionStatus || (() => {});
@@ -23,8 +21,7 @@ class ClientCore {
     this.currentUser = null;
     this.roomState = {
       roomId: null,
-      participants: [],
-      musicState: null
+      participants: []
     };
 
     this.mediaEngine = options.mediaEngine || null;
@@ -115,9 +112,7 @@ class ClientCore {
           type: 'auth',
           username: username.trim(),
           token: parsedToken,
-          roomId: detectedRoom,
-          // This client keeps a track's audio: pause/resume/seek updates may leave it out
-          capabilities: ['music-light']
+          roomId: detectedRoom
         });
       };
 
@@ -152,17 +147,6 @@ class ClientCore {
         message: err.message
       });
     }
-  }
-
-  // Control updates for the same track (pause, resume, seek) arrive without the song: keep the one we have
-  static withKnownAudio(next, previous) {
-    const audio = previous?.trackInfo?.audioDataUrl;
-    if (!next?.trackInfo || next.trackInfo.audioDataUrl || !audio || !next.trackId || next.trackId !== previous.trackId) return next;
-    return { ...next, trackInfo: { ...next.trackInfo, audioDataUrl: audio } };
-  }
-
-  supportsFeature(name) {
-    return (this.roomState.features || []).includes(name);
   }
 
   // https:// servers, or plain http:// only to a server on this computer (development)
@@ -214,9 +198,7 @@ class ClientCore {
         this.currentUser = msg.user;
         this.roomState = {
           roomId: msg.roomState.roomId,
-          participants: msg.roomState.participants || [],
-          musicState: msg.roomState.musicState || null,
-          features: Array.isArray(msg.roomState.features) ? msg.roomState.features : [] // empty on older servers
+          participants: msg.roomState.participants || []
         };
         this.onAuthSuccess(this.currentUser, this.roomState);
 
@@ -296,22 +278,12 @@ class ClientCore {
         this.onChatMessage(msg.message);
         break;
 
-      // 8. Music State Sync
-      case 'music_state':
-        this.roomState.musicState = ClientCore.withKnownAudio(msg.musicState, this.roomState.musicState);
-        this.onMusicState(this.roomState.musicState);
-        break;
-
-      case 'music_error':
-        this.onMusicError(msg.message);
-        break;
-
-      // 9. Invite Generated
+      // 8. Invite Generated
       case 'invite_generated':
         this.onInviteGenerated(msg);
         break;
 
-      // 10. Kicked
+      // 9. Kicked
       case 'kicked':
         this.notifyKicked(msg.reason || 'Removed by room administrator');
         break;
@@ -320,7 +292,7 @@ class ClientCore {
         this.onServerError(msg.message || 'The server rejected the request.');
         break;
 
-      // 11. WebRTC Signaling Relay
+      // 10. WebRTC Signaling Relay
       case 'signal':
         if (this.mediaEngine && msg.senderPeerId && msg.signal) {
           this.mediaEngine.handleSignal(msg.senderPeerId, msg.signal);
@@ -367,15 +339,6 @@ class ClientCore {
     });
   }
 
-  sendMusicAction({ action, trackInfo, time }) {
-    return this.send({
-      type: 'music_action',
-      action,
-      trackInfo,
-      time
-    });
-  }
-
   requestInviteLink(targetUsername) {
     return this.send({
       type: 'invite_generate',
@@ -389,7 +352,7 @@ class ClientCore {
     }
     this.closeSocket();
     this.currentUser = null;
-    this.roomState = { roomId: null, participants: [], musicState: null };
+    this.roomState = { roomId: null, participants: [] };
   }
 }
 

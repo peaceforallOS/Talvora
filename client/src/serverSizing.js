@@ -8,8 +8,6 @@
  *  - Audio/video go directly between participants (full mesh). Only participants whose network blocks
  *    direct connections are relayed through the server (TURN): those connections cost server bandwidth
  *    and CPU. Everyone else costs the server almost nothing for media.
- *  - Music is sent through the server: each new song goes to every participant (and to anyone joining
- *    mid-song), buffered once per participant while it is sent. Pause, resume and seek cost a few bytes.
  *
  * Relay CPU and message sizes are estimates; the recommendation keeps headroom on top of them.
  */
@@ -30,7 +28,6 @@ const SIZING = {
   screenMbps: 1.5,
   packetBytes: 1100, // typical video packet
   relayPpsPerCore: 60000, // estimate: packets per second the relay (JavaScript) forwards on one core
-  musicDataUrlFactor: 1.37, // base64 inside the room state
   // Full mesh: every participant keeps a connection to every other one
   meshPeersWarn: 15,
   meshPeersMax: 25,
@@ -52,12 +49,6 @@ const NETWORKS = {
   home: { label: 'Mostly homes and mobile', relay: 0.1 },
   mixed: { label: 'Mixed homes and offices', relay: 0.2 },
   strict: { label: 'Mostly offices, schools, strict firewalls', relay: 0.4 }
-};
-
-const MUSIC_USE = {
-  none: { label: 'No music', actionsPerHour: 0 },
-  sometimes: { label: 'Sometimes (a few songs per hour)', actionsPerHour: 4 },
-  often: { label: 'Often (music most of the time)', actionsPerHour: 15 }
 };
 
 const RAM_TIERS_GB = [1, 2, 4, 8, 16, 32];
@@ -84,8 +75,6 @@ const round = (value, digits = 1) => Math.round(value * 10 ** digits) / 10 ** di
  *   screenShares      people sharing their screen at the same time (0-2)
  *   videoQuality      key of VIDEO_QUALITY
  *   network           key of NETWORKS
- *   music             key of MUSIC_USE
- *   musicFileMb       typical song file size (MB)
  *   hoursPerMonth     hours of calls per month
  */
 function estimateServer(input) {
@@ -94,8 +83,6 @@ function estimateServer(input) {
   const screens = clamp(Math.round(Number(input.screenShares) || 0), 0, Math.min(2, n));
   const quality = VIDEO_QUALITY[input.videoQuality] || VIDEO_QUALITY.standard;
   const network = NETWORKS[input.network] || NETWORKS.home;
-  const music = MUSIC_USE[input.music] || MUSIC_USE.none;
-  const musicFileMb = clamp(Number(input.musicFileMb) || 0, 0, 18);
   const hours = clamp(Number(input.hoursPerMonth) || 0, 0, 744);
   const peers = n - 1;
 
@@ -106,29 +93,26 @@ function estimateServer(input) {
   const videoPps = mbps => (mbps * 1e6) / 8 / SIZING.packetBytes;
   const relayPps = relayedShare * (n * peers * SIZING.audioPps + cameras * peers * videoPps(quality.mbps) + screens * peers * videoPps(SIZING.screenMbps));
 
-  // Signaling (measured) and music (each action sends the file to everyone)
+  // Signaling (measured)
   const signalingMbps = (SIZING.messagesPerSecond(n) * SIZING.messageBytes * 8) / 1e6;
-  const musicMb = musicFileMb * SIZING.musicDataUrlFactor;
-  const musicMbps = (music.actionsPerHour * n * musicMb * 8) / 3600;
 
   // CPU: everything shares one single-threaded process
   const signalingCorePct = interpolate(SIZING.signalingCpu, n);
   const relayCorePct = (relayPps / SIZING.relayPpsPerCore) * 100;
   const corePct = (signalingCorePct + relayCorePct) * 1.1; // + encryption (TLS) and housekeeping
 
-  // Memory: the process, plus a song buffered once per participant while it is being sent
-  const processMb = SIZING.memoryBaseMb + SIZING.memoryPerUserMb * n + (music.actionsPerHour ? musicMb * (1 + n) : 0);
+  // Memory: the process and its per-participant state
+  const processMb = SIZING.memoryBaseMb + SIZING.memoryPerUserMb * n;
   const neededMb = (processMb + SIZING.osMemoryMb) * 1.5;
   const ramGb = RAM_TIERS_GB.find(gb => gb * 1024 >= neededMb) || RAM_TIERS_GB[RAM_TIERS_GB.length - 1];
 
-  const uploadMbps = relayMbps + signalingMbps + musicMbps;
+  const uploadMbps = relayMbps + signalingMbps;
   const downloadMbps = relayMbps + signalingMbps * 0.1;
   // Providers usually count outgoing traffic; incoming is about the relay share again
   const trafficGbPerHour = (uploadMbps * 3600) / 8 / 1000;
   const monthlyTrafficGb = trafficGbPerHour * hours;
-  // A song should reach everyone within ~15 s; never recommend less than 100 Mbit/s
-  const musicBurstMbps = music.actionsPerHour ? (n * musicMb * 8) / 15 : 0;
-  const linkMbps = [100, 200, 500, 1000, 2500, 10000].find(speed => speed >= Math.max(uploadMbps * 1.5, musicBurstMbps)) || 10000;
+  // Headroom for peaks; never recommend less than 100 Mbit/s
+  const linkMbps = [100, 200, 500, 1000, 2500, 10000].find(speed => speed >= uploadMbps * 1.5) || 10000;
 
   // One process: one core does the work; a second keeps the system, network and encryption off it
   const vcpu = corePct <= 30 ? 1 : 2;
@@ -160,9 +144,6 @@ function estimateServer(input) {
   } else if (meshOk && corePct > 60) {
     warnings.push({ level: 'warn', text: 'Close to the limit of one server process. Choose a CPU with high single-core speed (3 GHz or more); extra cores do not help.' });
   }
-  if (music.actionsPerHour && n * musicMb > 2048) {
-    warnings.push({ level: 'warn', text: `Each song is sent to all ${n} people through the server (about ${round((n * musicMb) / 1024)} GB per song). Prefer smaller files or fewer participants when playing music.` });
-  }
   if (network.relay === 0) {
     warnings.push({ level: 'info', text: 'On the same local network, audio and video never pass through the server, so it needs very little.' });
   }
@@ -187,7 +168,6 @@ function estimateServer(input) {
       relayMbps: round(relayMbps),
       uploadMbps: round(uploadMbps),
       downloadMbps: round(downloadMbps),
-      musicBurstMbps: round(musicBurstMbps, 0),
       relayedShare: round(relayedShare * 100, 0)
     },
     perParticipant: {
@@ -204,9 +184,7 @@ const TYPICAL_CALL = {
   maxCameras: 6,
   screenShares: 1,
   videoQuality: 'standard',
-  network: 'mixed',
-  music: 'sometimes',
-  musicFileMb: 8
+  network: 'mixed'
 };
 
 function estimateForUsers(participants) {
@@ -217,13 +195,11 @@ function estimateForUsers(participants) {
     screenShares: n > 1 ? TYPICAL_CALL.screenShares : 0,
     videoQuality: TYPICAL_CALL.videoQuality,
     network: TYPICAL_CALL.network,
-    music: TYPICAL_CALL.music,
-    musicFileMb: TYPICAL_CALL.musicFileMb,
     hoursPerMonth: 0
   });
 }
 
-return { SIZING, VIDEO_QUALITY, NETWORKS, MUSIC_USE, TYPICAL_CALL, estimateServer, estimateForUsers };
+return { SIZING, VIDEO_QUALITY, NETWORKS, TYPICAL_CALL, estimateServer, estimateForUsers };
 })();
 
 if (typeof module !== 'undefined' && module.exports) {

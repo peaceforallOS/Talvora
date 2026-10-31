@@ -6,7 +6,6 @@
   let setupToken = null; // one-time token from the first-visit panel link
   let sessionTimer = null;
   let participants = [];
-  let musicState = null;
   let refreshTimer = null;
   let lastSnapshot = null;
 
@@ -31,9 +30,6 @@
   const statUptime = document.getElementById('stat-uptime');
   const btnLogout = document.getElementById('btn-logout');
 
-  const musicBanner = document.getElementById('music-banner');
-  const musicDetails = document.getElementById('music-playing-details');
-  const btnStopMusic = document.getElementById('btn-admin-stop-music');
 
   const usersTbody = document.getElementById('users-tbody');
   const userSearch = document.getElementById('user-search');
@@ -228,7 +224,7 @@
       renderRelease(data.release);
 
       // Skip re-rendering when nothing changed, so polling doesn't reset the table mid-interaction
-      const snapshot = JSON.stringify([data.roomId, data.participants, data.musicState?.playedBy, data.musicState?.isPlaying, data.musicState?.trackInfo, Math.floor(Date.now() / 60000)]);
+      const snapshot = JSON.stringify([data.roomId, data.participants, Math.floor(Date.now() / 60000)]);
       if (snapshot !== lastSnapshot) {
         lastSnapshot = snapshot;
         statRoomId.textContent = data.roomId;
@@ -237,9 +233,6 @@
         statCamsOn.textContent = data.participants.filter(u => u.mediaState?.video || u.mediaState?.screen).length;
 
         participants = data.participants;
-        musicState = data.musicState;
-
-        renderMusicBanner();
         renderUsersTable();
       }
 
@@ -269,29 +262,6 @@
     const command = document.getElementById('release-command').textContent;
     navigator.clipboard.writeText(command).then(() => showToast('Command copied. Run it on the server.'),
       () => showToast(`Run on the server: ${command}`));
-  });
-
-  function renderMusicBanner() {
-    if (musicState && musicState.playedBy) {
-      musicBanner.classList.remove('hidden');
-      const who = musicState.playedBy?.username || 'Unknown User';
-      const title = musicState.trackInfo?.title || 'Shared Audio Stream';
-      musicDetails.textContent = `${title} · played by ${who}${musicState.isPlaying ? '' : ' (paused)'}`;
-    } else {
-      musicBanner.classList.add('hidden');
-    }
-  }
-
-  btnStopMusic.addEventListener('click', async () => {
-    try {
-      const res = await adminPost('/api/admin/stop-music', {});
-      if (res.ok) {
-        showToast('Music playback successfully stopped via Admin Authority.');
-        fetchRoomInfo();
-      }
-    } catch (err) {
-      showToast('Error stopping music.');
-    }
   });
 
   // --- Network & ports ---
@@ -361,7 +331,7 @@
     const filtered = participants.filter(u => u.username.toLowerCase().includes(filter));
 
     if (filtered.length === 0) {
-      usersTbody.innerHTML = `<tr><td colspan="8" class="empty-state">${
+      usersTbody.innerHTML = `<tr><td colspan="7" class="empty-state">${
         participants.length === 0
           ? `${iconSvg('users')}No one is in the room right now.`
           : `${iconSvg('search')}No users match your search.`
@@ -398,7 +368,6 @@
         <td class="td-perm">${createSwitch(user.id, 'can_audio', user.permissions.can_audio, isAdmin)}</td>
         <td class="td-perm">${createSwitch(user.id, 'can_video', user.permissions.can_video, isAdmin)}</td>
         <td class="td-perm">${createSwitch(user.id, 'can_chat', user.permissions.can_chat, isAdmin)}</td>
-        <td class="td-perm">${createSwitch(user.id, 'can_play_music', user.permissions.can_play_music, isAdmin)}</td>
         <td class="td-perm">${createSwitch(user.id, 'can_invite', user.permissions.can_invite, isAdmin)}</td>
         <td class="td-actions">
           ${
@@ -432,7 +401,7 @@
           const res = await adminPost('/api/admin/permissions', { userId, permissions: newPermissions });
 
           if (res.ok) {
-            const permLabels = { can_audio: 'Audio', can_video: 'Video', can_chat: 'Chat', can_play_music: 'Music', can_invite: 'Inviting' };
+            const permLabels = { can_audio: 'Audio', can_video: 'Video', can_chat: 'Chat', can_invite: 'Inviting' };
             showToast(`${permLabels[permKey] || permKey} turned ${value ? 'on' : 'off'} for ${user.username}`);
             user.permissions[permKey] = value;
             lastSnapshot = null;

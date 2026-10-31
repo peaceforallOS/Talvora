@@ -1,6 +1,6 @@
 /**
  * Section 2 Integration Test
- * Tests Server Initialization, Strict Username-Link Binding, Music Concurrency Lock & Permissions
+ * Tests Server Initialization, Strict Username-Link Binding & Permissions
  */
 
 const assert = require('assert');
@@ -111,20 +111,7 @@ async function runTests() {
   assert.ok(omidAuthSuccess.user.username === 'Omid', 'Omid username mismatch');
   console.log('✓ Test 5 Passed: Omid successfully joined room with matching credentials');
 
-  // Test 6: Music exclusivity and Admin authority
-  // Omid starts music
-  omidWs.send(JSON.stringify({
-    type: MessageType.MUSIC_ACTION,
-    action: 'play',
-    trackInfo: { title: 'Track 1', artist: 'Omid' }
-  }));
-
-  const musicState1 = await waitForMessage(omidWs, MessageType.MUSIC_STATE);
-  assert.ok(musicState1.musicState.isPlaying === true, 'Music should be playing');
-  assert.ok(musicState1.musicState.playedBy.username === 'Omid', 'Music playedBy check failed');
-  console.log('✓ Test 6a Passed: Omid started music, gained playback lock');
-
-  // Admin generates link for second user "Reza"
+  // Test 6: The admin invites a second user, "Reza", who joins with that link
   adminWs.send(JSON.stringify({
     type: MessageType.INVITE_GENERATE,
     targetUsername: 'Reza'
@@ -137,26 +124,9 @@ async function runTests() {
     username: 'Reza',
     token: rezaInvite.token
   }));
-  await waitForMessage(rezaWs, MessageType.AUTH_SUCCESS);
-
-  // Reza tries to play music while Omid is playing -> MUST BE REJECTED
-  rezaWs.send(JSON.stringify({
-    type: MessageType.MUSIC_ACTION,
-    action: 'play',
-    trackInfo: { title: 'Reza Song' }
-  }));
-  const rezaMusicError = await waitForMessage(rezaWs, MessageType.MUSIC_ERROR);
-  assert.ok(rezaMusicError.message.includes('Only one person can play music at a time'), 'Music lock error check failed');
-  console.log('✓ Test 6b Passed: Reza blocked from playing music while Omid is playing');
-
-  // Admin stops music -> MUST SUCCEED
-  adminWs.send(JSON.stringify({
-    type: MessageType.MUSIC_ACTION,
-    action: 'stop'
-  }));
-  const musicStateStopped = await waitForMessage(omidWs, MessageType.MUSIC_STATE);
-  assert.ok(musicStateStopped.musicState.isPlaying === false, 'Music should be stopped');
-  console.log('✓ Test 6c Passed: Admin successfully stopped music using override authority');
+  const rezaJoined = await waitForMessage(rezaWs, MessageType.AUTH_SUCCESS);
+  assert.strictEqual(rezaJoined.user.username, 'Reza', 'Reza username mismatch');
+  console.log('✓ Test 6 Passed: A second invited user joined the room');
 
   // Test 7: Chat and Permission Revocation
   // Revoke chat for Reza via roomManager

@@ -170,24 +170,10 @@ async function runAdminPanelTests() {
   assert.ok(inviteRes.json.joinLink.includes('user=NewUser123'), 'Invite link missing username');
   console.log('✓ Test 6 Passed: In-panel invite link generator generated valid user-locked link');
 
-  // 7. Test Admin Stop Music API
-  // Let Tester1 start music first
-  roomManager.startMusic(tester1.id, { title: 'Test Song' });
-  assert.ok(roomManager.musicState.isPlaying === true, 'Music should be playing');
-
-  const stopMusicRes = await httpRequest({
-    host: 'localhost',
-    port: 8098,
-    path: '/api/admin/stop-music',
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' }
-  }, {
-    token: adminToken
-  });
-
-  assert.ok(stopMusicRes.statusCode === 200, 'Stop music API failed');
-  assert.ok(roomManager.musicState.isPlaying === false, 'Music should be stopped');
-  console.log('✓ Test 7 Passed: Admin panel force-stopped active music playback');
+  // 7. The panel offers exactly the permissions the app has
+  assert.deepStrictEqual(Object.keys(roomManager.getParticipant(tester1.id).permissions).sort(), ['can_audio', 'can_chat', 'can_invite', 'can_video'],
+    'Unexpected permissions');
+  console.log('✓ Test 7 Passed: Participants carry only audio, video, chat and invite permissions');
 
   // 8. Test Kick User API
   const kickRes = await httpRequest({
@@ -223,6 +209,11 @@ async function runAdminPanelTests() {
   const AuthService = require('../src/auth');
   assert.deepStrictEqual({ ...new AuthService().permissionOverrides.tester1 }, { ...tester1.permissions, can_invite: true, can_chat: false },
     'Permission changes must be saved to the server config');
+  // A saved permission this version no longer has (from an older version's config) is dropped on load
+  const saved = JSON.parse(fs.readFileSync(process.env.VIDEOCALL_CONFIG, 'utf8'));
+  saved.permissionOverrides.tester1.can_old_feature = false;
+  fs.writeFileSync(process.env.VIDEOCALL_CONFIG, JSON.stringify(saved));
+  assert.ok(!('can_old_feature' in new AuthService().permissionOverrides.tester1), 'Unknown saved permissions must be dropped');
   roomManager.kickParticipant(roomManager.getParticipantByUsername('Tester1').id);
   back.sock.close();
   console.log('✓ Test 8b Passed: Permissions set by the admin survive rejoining and restarts');
@@ -296,16 +287,16 @@ async function runAdminPanelTests() {
   adminSessions.failures.clear();
   sessionCookie = adminSessions.create().cookie.split(';')[0];
   const formPost = await httpRequest({
-    host: 'localhost', port: 8098, path: '/api/admin/stop-music', method: 'POST', headers: { 'Content-Type': 'text/plain' }
+    host: 'localhost', port: 8098, path: '/api/admin/permissions', method: 'POST', headers: { 'Content-Type': 'text/plain' }
   }, '{"x":"="}');
   assert.strictEqual(formPost.statusCode, 403, 'text/plain POST must be refused');
   const foreign = await httpRequest({
-    host: 'localhost', port: 8098, path: '/api/admin/stop-music', method: 'POST',
+    host: 'localhost', port: 8098, path: '/api/admin/permissions', method: 'POST',
     headers: { 'Content-Type': 'application/json', Origin: 'http://localhost:9999' }
   }, {});
   assert.strictEqual(foreign.statusCode, 403, 'Cross-origin POST must be refused');
   assert.ok(!('access-control-allow-origin' in foreign.headers), 'Admin API must not allow cross-origin reads');
-  assert.strictEqual((await post('/api/admin/stop-music', {})).statusCode, 200, 'Same-origin JSON POST must work');
+  assert.strictEqual((await post('/api/admin/permissions', { userId: 'nobody', permissions: {} })).statusCode, 404, 'Same-origin JSON POST must reach the API');
   console.log('✓ Test 11 Passed: Cross-site requests to the admin API are refused');
 
   // 12. reset-password from another process applies at once, while the server keeps running

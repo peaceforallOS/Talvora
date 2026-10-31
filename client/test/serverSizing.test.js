@@ -1,6 +1,6 @@
 /**
  * Server Calculator Tests — recommendations follow the measured load and the mesh limits: small
- * calls fit the smallest server, relayed video and music raise bandwidth and memory, oversized
+ * calls fit the smallest server, relayed video raises bandwidth and the port speed, oversized
  * calls are reported as not workable instead of getting a huge server
  */
 
@@ -9,7 +9,7 @@ const { estimateServer, SIZING } = require('../src/serverSizing');
 
 console.log('--- Starting Server Calculator Tests ---');
 
-const base = { participants: 8, cameras: 4, screenShares: 0, videoQuality: 'standard', network: 'home', music: 'none', musicFileMb: 8, hoursPerMonth: 40 };
+const base = { participants: 8, cameras: 4, screenShares: 0, videoQuality: 'standard', network: 'home', hoursPerMonth: 40 };
 const run = changes => estimateServer({ ...base, ...changes });
 
 // 1. A typical small call fits the smallest server
@@ -39,13 +39,13 @@ for (const participants of [2, 10, 20, 26]) {
 }
 console.log('✓ Test 4 Passed: CPU advice reflects the single-threaded server');
 
-// 5. Music: songs go to everyone through the server, buffered per participant
-const withMusic = run({ participants: 20, cameras: 0, music: 'often', musicFileMb: 18 });
-const noMusic = run({ participants: 20, cameras: 0 });
-assert.ok(withMusic.load.processMemoryMb > noMusic.load.processMemoryMb + 18 * 20);
-assert.ok(withMusic.recommendation.ramGb >= noMusic.recommendation.ramGb);
-assert.ok(withMusic.recommendation.linkMbps > noMusic.recommendation.linkMbps, 'Songs need a faster port');
-console.log('✓ Test 5 Passed: Music raises memory and network needs');
+// 5. The port speed keeps headroom over the outgoing traffic, and is never below 100 Mbit/s
+for (const changes of [{ participants: 2, cameras: 0 }, { participants: 20, cameras: 6, network: 'strict', videoQuality: 'high' }]) {
+  const result = run(changes);
+  assert.ok(result.recommendation.linkMbps >= 100);
+  assert.ok(result.recommendation.linkMbps >= result.load.uploadMbps * 1.5, 'Port speed below the traffic');
+}
+console.log('✓ Test 5 Passed: Port speed follows the outgoing traffic');
 
 // 6. Oversized calls are reported as not workable, with the reason
 const webinar = run({ participants: 300, cameras: 1 });
@@ -58,7 +58,7 @@ assert.ok(run({ participants: SIZING.meshPeersMax + 1, cameras: 2 }).fits, 'Larg
 console.log('✓ Test 6 Passed: Calls beyond the mesh limits are flagged, not sized');
 
 // 7. Bad input is clamped, never NaN
-const odd = estimateServer({ participants: 'abc', cameras: -5, hoursPerMonth: 'x', videoQuality: 'ultra', network: '?', music: '?' });
+const odd = estimateServer({ participants: 'abc', cameras: -5, hoursPerMonth: 'x', videoQuality: 'ultra', network: '?' });
 assert.ok(Number.isFinite(odd.load.corePct) && Number.isFinite(odd.recommendation.monthlyTrafficGb));
 assert.strictEqual(run({ cameras: 50 }).perParticipant.cameraUploadMbps, run({ cameras: 8 }).perParticipant.cameraUploadMbps,
   'Cameras are capped at the number of people');
@@ -69,7 +69,7 @@ const { estimateForUsers, TYPICAL_CALL } = require('../src/serverSizing');
 const eight = estimateForUsers(8);
 assert.deepStrictEqual(eight, estimateServer({
   participants: 8, cameras: TYPICAL_CALL.maxCameras, screenShares: 1, videoQuality: 'standard',
-  network: 'mixed', music: 'sometimes', musicFileMb: 8, hoursPerMonth: 0
+  network: 'mixed', hoursPerMonth: 0
 }), 'Only the number of people may vary');
 assert.ok(eight.fits && eight.recommendation.trafficGbPerHour > 0);
 assert.strictEqual(estimateForUsers(3).load.relayMbps < estimateForUsers(20).load.relayMbps, true, 'More people, more traffic');

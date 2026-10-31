@@ -1,7 +1,7 @@
 # System Architecture & Protocol Specification
 
 ## 1. Overview
-Talvora is a cross-platform (Windows & Linux) real-time voice, video, chat, and synchronized music collaboration system supported by a Linux-based relay server and an Admin Web Management Panel.
+Talvora is a cross-platform (Windows & Linux) real-time voice, video and chat system supported by a Linux-based relay server and an Admin Web Management Panel.
 
 ---
 
@@ -141,24 +141,21 @@ indicator uses the cleaned signal: RMS above -50 dBFS, held for 400 ms between w
 #### Client -> Server Messages
 | Type | Payload | Description |
 |------|---------|-------------|
-| `auth` | `{ username, token, roomId, capabilities: ['music-light'] }` | Authenticates and joins the room. `music-light`: the client keeps a track's audio, so pause/resume/seek updates may omit it. |
+| `auth` | `{ username, token, roomId }` | Authenticates and joins the room. |
 | `invite_generate` | `{ targetUsername }` | Requests invite link generation for `targetUsername`. |
 | `chat_message` | `{ mode: 'public'\|'direct'\|'group', recipients: [userId], text: string }` | Sends a message. |
-| `music_action` | `{ action: 'play'\|'pause'\|'resume'\|'stop'\|'seek', trackInfo: {...}, time: number }` | Music player actions (`play` carries the song as an audio data URL). |
 | `media_state` | `{ audio: boolean, video: boolean, screen: boolean }` | Reports client media mute/active state. |
 | `webrtc_signal` | `{ targetPeerId, signal }` | ICE candidates & SDP offer/answer for media relay. |
 
 #### Server -> Client Messages
 | Type | Payload | Description |
 |------|---------|-------------|
-| `auth_success` | `{ user: {...}, roomState: { ..., features: ['music-resume', 'music-light'] }, iceServers: [...] }` | Emitted on valid join; `iceServers` includes the TURN relay; `features` lists what the server supports (absent on older servers). |
+| `auth_success` | `{ user: {...}, roomState: { roomId, participants }, iceServers: [...] }` | Emitted on valid join; `iceServers` includes the TURN relay. |
 | `auth_error` | `{ code: 'ERR_CREDENTIAL_MISMATCH', message: string }` | Emitted when username and link mismatch. |
 | `user_joined` | `{ user: {...} }` | Notifies that a new user entered. |
 | `user_left` | `{ userId: string, reason: string }` | Notifies user departure or kick. |
 | `permissions_updated`| `{ userId: string, permissions: {...} }` | Real-time push when admin toggles permissions. |
 | `chat_message` | `{ id, senderId, senderName, mode, recipients, text, timestamp }` | Delivered chat message. |
-| `music_state` | `{ isPlaying, playedBy: { id, username }, trackInfo: { title, artist, audioDataUrl? }, trackId, currentTime, startedAt, position }` | Synchronized music state; `position` is computed at send time. The audio is included for a new track, on join, and always for clients without `music-light`. |
-| `music_error` | `{ message: string }` | e.g. "Another user is currently playing music." |
 | `kick` | `{ reason: string }` | Force disconnection notice. |
 
 ---
@@ -171,7 +168,6 @@ Each user entity in the room state contains a `permissions` object:
   "can_audio": true,
   "can_video": true,
   "can_chat": true,
-  "can_play_music": true,
   "can_invite": false
 }
 ```
@@ -186,44 +182,14 @@ Each user entity in the room state contains a `permissions` object:
 
 ---
 
-## 5. Synchronized Music Player State Machine
-
-### Rules
-1. Only one user can play music at any given time.
-2. First-come, first-served: Whoever starts playing first acquires the exclusive playback lock.
-3. Other users attempting to start music will be rejected with an alert informing them who is currently playing.
-4. The active DJ can pause, resume, seek, stop, or replace their track; a paused track keeps the lock.
-5. The **Admin** has global override authority to pause, resume, seek or stop any music, regardless of who started it.
-6. Pause, resume and seek send a few bytes to current clients (`music-light`); the song itself goes out only
-   with a new track and to people joining mid-song. Each listener sets their own music volume.
-
-### Devices and volume (client)
+## 5. Devices and Volume (Client)
 - Settings switch microphone, camera and speaker during the call: the microphone changes only the source of the
   noise-suppression graph (peers keep the same track); the camera is swapped with `replaceTrack`; the speaker is
-  applied with `setSinkId` to every voice (peer tiles) and the music. Choices are remembered (`localStorage`) and
+  applied with `setSinkId` to every voice (peer tiles). Choices are remembered (`localStorage`) and
   used when the devices open next time.
 - Each participant's voice plays from their tile, so its volume (0-100%, mute) is per person and only for you,
   remembered by username. It stays on the media element on purpose: routing voices through Web Audio (to boost
   above 100%) would bypass Chromium's echo cancellation.
-
-```
-                  +--------------+
-                  |     IDLE     |
-                  +--------------+
-                     |        ^
-      User starts    |        | User stops OR
-   (if can_play_music|        | Admin force-stops
-    & no lock held)  |        |
-                     v        |
-                  +--------------+
-                  |   PLAYING    | (Locked by User X)
-                  +--------------+
-                     |
-       User Y attempts to play
-                     |
-                     v
-             [Rejected with error]
-```
 
 ---
 
@@ -248,14 +214,13 @@ Each user entity in the room state contains a `permissions` object:
 ### Server calculator
 The join screen's "Planning a server?" opens a calculator (`client/src/serverSizing.js`, tested in
 `client/test/serverSizing.test.js`). The user enters only the number of people per call; `estimateForUsers` assumes a
-busy typical call (up to 6 cameras at 720p, one screen share, mixed home/office networks, occasional music) and shows
+busy typical call (up to 6 cameras at 720p, one screen share, mixed home/office networks) and shows
 traffic per hour of calls. The underlying `estimateServer` takes all factors: cameras, video quality, screen sharing,
 where people join from (share of connections that need the TURN relay: LAN 0%, homes 10%, mixed 20%, strict networks
-40%), music use and song size, hours per month. Model: signaling CPU interpolated from `docs/load-test-report.md`; relayed media =
+40%), hours per month. Model: signaling CPU interpolated from `docs/load-test-report.md`; relayed media =
 relay share x full-mesh streams (audio 0.05, video 0.5 / 1.5 / 2.5, screen 1.5 Mbit/s per stream), relay CPU from
 packets per second (estimated 60k pps per core); everything on one core (single-threaded process), so at most 2 vCPU
-is recommended; music sends each new song (base64) to every participant and buffers it once per
-participant. Calls with more than ~26 people or more than 8 cameras are reported as not workable (mesh limit on the
+is recommended. Calls with more than ~26 people or more than 8 cameras are reported as not workable (mesh limit on the
 participants' side) instead of being sized.
 
 ### Updates (GitHub releases)

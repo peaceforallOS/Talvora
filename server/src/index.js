@@ -41,9 +41,9 @@ const SHARED_DIR = [
   path.join(__dirname, '../../shared'),
   path.join(__dirname, '../shared')
 ].find(dir => fs.existsSync(dir)) || path.join(__dirname, '../../shared');
-const MAX_WS_PAYLOAD = 25 * 1024 * 1024; // room for an uploaded music track as a data URL
+const MAX_WS_PAYLOAD = 256 * 1024; // chat messages and call setup (SDP, ICE) are a few KB at most
 const MAX_CHAT_LENGTH = 4000;
-const PERMISSION_KEYS = ['can_audio', 'can_video', 'can_chat', 'can_play_music', 'can_invite'];
+const PERMISSION_KEYS = ['can_audio', 'can_video', 'can_chat', 'can_invite'];
 
 // HTTPS (TLS_MODE=auto, set by the installer): see certManager.js for how the certificate is chosen.
 // Without it the server only listens on this computer (development and tests): invite tokens,
@@ -288,7 +288,6 @@ const server = (TLS_ENABLED ? https : http).createServer(async (req, res) => {
     return sendJson(res, 200, {
       roomId: roomManager.roomId,
       participants: roomManager.getAllPublicUsers(),
-      musicState: roomManager.getMusicSummary(),
       network: { ...portAccess.report(), publicBaseUrl },
       release: releaseWatcher.state,
       serverStats: {
@@ -367,19 +366,6 @@ const server = (TLS_ENABLED ? https : http).createServer(async (req, res) => {
     return sendJson(res, 200, { success: true, network: { ...portAccess.report(), publicBaseUrl } });
   }
 
-  if (pathname === '/api/admin/stop-music' && req.method === 'POST') {
-    try {
-      await parseJsonBody(req); // no fields, but a malformed body is still refused
-
-      // Admin has override authority
-      roomManager.resetMusic();
-
-      return sendJson(res, 200, { success: true });
-    } catch (err) {
-      return sendJson(res, 400, { error: err.message });
-    }
-  }
-
   if (pathname === '/api/admin/invite' && req.method === 'POST') {
     try {
       const body = await parseJsonBody(req);
@@ -434,7 +420,7 @@ const server = (TLS_ENABLED ? https : http).createServer(async (req, res) => {
   res.end('Not Found');
 });
 
-// WebSocket Server for Signaling, Chat, Music & Media Relay
+// WebSocket Server for Signaling, Chat & Media Relay
 const wss = new WebSocketServer({ server, maxPayload: MAX_WS_PAYLOAD });
 
 let nextConnectionId = 1;
@@ -492,10 +478,7 @@ wss.on('connection', (ws, req) => {
         username: validation.user.username,
         role: validation.user.role,
         permissions: validation.user.permissions,
-        ws,
-        capabilities: Array.isArray(msg.capabilities)
-          ? msg.capabilities.filter(c => typeof c === 'string' && c.length <= 40).slice(0, 20)
-          : []
+        ws
       });
 
       // Send auth success and current room snapshot to the joining user
@@ -504,9 +487,7 @@ wss.on('connection', (ws, req) => {
         user: roomManager.getPublicUser(currentUser),
         roomState: {
           roomId: roomManager.roomId,
-          participants: roomManager.getAllPublicUsers(),
-          musicState: roomManager.getMusicStateForClient(),
-          features: RoomManager.features
+          participants: roomManager.getAllPublicUsers()
         },
         iceServers: turnRelay.getIceServers(req.headers.host, currentUser.id)
       }));
@@ -622,43 +603,7 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    // 4. Synchronized Music Playback
-    if (msg.type === MessageType.MUSIC_ACTION) {
-      const { action, trackInfo, time } = msg;
-
-      if (action === 'play') {
-        const res = roomManager.startMusic(currentUser.id, trackInfo);
-        if (!res.success) {
-          ws.send(JSON.stringify({
-            type: MessageType.MUSIC_ERROR,
-            message: res.message
-          }));
-        }
-      } else if (action === 'stop') {
-        const res = roomManager.stopMusic(currentUser.id);
-        if (!res.success) {
-          ws.send(JSON.stringify({
-            type: MessageType.MUSIC_ERROR,
-            message: res.message
-          }));
-        }
-      } else if (action === 'pause' || action === 'seek' || action === 'resume') {
-        const res = action === 'pause'
-          ? roomManager.pauseMusic(currentUser.id)
-          : action === 'resume'
-            ? roomManager.resumeMusic(currentUser.id)
-            : roomManager.seekMusic(currentUser.id, time);
-        if (!res.success) {
-          ws.send(JSON.stringify({
-            type: MessageType.MUSIC_ERROR,
-            message: res.message
-          }));
-        }
-      }
-      return;
-    }
-
-    // 5. Media State Change (Mute / Unmute camera & mic)
+    // 4. Media State Change (Mute / Unmute camera & mic)
     if (msg.type === MessageType.MEDIA_STATE_CHANGE) {
       const mediaState = {};
       for (const key of ['audio', 'video', 'screen']) {
@@ -670,7 +615,7 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    // 6. WebRTC Signaling Relay (Offer, Answer, ICE Candidates)
+    // 5. WebRTC Signaling Relay (Offer, Answer, ICE Candidates)
     if (msg.type === MessageType.SIGNAL) {
       const { targetPeerId, signal } = msg;
       if (typeof targetPeerId === 'string' && signal && typeof signal === 'object') {

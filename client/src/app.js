@@ -34,24 +34,9 @@
   const btnToggleMic = document.getElementById('btn-toggle-mic');
   const btnToggleCam = document.getElementById('btn-toggle-cam');
   const btnShareScreen = document.getElementById('btn-share-screen');
-  const btnMusicModal = document.getElementById('btn-music-modal');
   const btnToggleChatPanel = document.getElementById('btn-toggle-chat-panel');
   const btnLeaveRoom = document.getElementById('btn-leave-room');
   const btnOpenInvite = document.getElementById('btn-open-invite');
-
-  // Music UI
-  const roomMusicBar = document.getElementById('room-music-bar');
-  const musicTrackName = document.getElementById('music-track-name');
-  const musicDjName = document.getElementById('music-dj-name');
-  const btnStopMusicTop = document.getElementById('btn-stop-music-top');
-  const btnToggleMusicTop = document.getElementById('btn-toggle-music-top');
-  const modalMusic = document.getElementById('modal-music');
-  const btnCloseMusicModal = document.getElementById('btn-close-music-modal');
-  const btnModalPlayMusic = document.getElementById('btn-modal-play-music');
-  const musicTrackTitleInput = document.getElementById('music-track-title');
-  const musicAudioFileInput = document.getElementById('music-audio-file');
-  const musicErrorAlert = document.getElementById('music-error-alert');
-  const sharedAudioElement = document.getElementById('shared-audio-element');
 
   // Invite Modal
   const modalInvite = document.getElementById('modal-invite');
@@ -88,8 +73,16 @@
   let isScreenSharing = false;
   let callTimerInterval = null;
 
-  // Base64 inflates files by 4/3; stay under the server's 25 MB message limit
-  const MAX_MUSIC_FILE_BYTES = 18 * 1024 * 1024;
+  // Saved settings this version uses; any other vc_ setting was left by an older version and is removed.
+  // A new saved setting must be added here.
+  const SAVED_SETTINGS = ['vc_network_dismissed', 'vc_peer_volume', 'vc_devices', 'vc_server_history'];
+  try {
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith('vc_') && !SAVED_SETTINGS.includes(key)) localStorage.removeItem(key);
+    }
+  } catch (e) {
+    // storage unavailable: nothing to tidy
+  }
 
   // Initialize Engines
   mediaEngine = new MediaEngine({
@@ -150,19 +143,9 @@
     },
     onPermissionsUpdated: perms => {
       applyPermissionsToUI(perms);
-      updateMusicModalView(); // music may have been allowed or taken away
     },
     onChatMessage: msg => {
       chatController.receiveMessage(msg, clientCore.currentUser?.id);
-    },
-    onMusicState: state => {
-      updateMusicUI(state);
-    },
-    onMusicError: msg => {
-      showToast(`Music: ${msg}`);
-      sendingTrack = false;
-      showMusicError(msg);
-      updateMusicModalView();
     },
     onInviteGenerated: data => {
       inviteBoundName.textContent = data.username;
@@ -520,7 +503,6 @@
 
     applyPermissionsToUI(user.permissions);
     updateParticipantsUI();
-    updateMusicUI(roomState.musicState);
 
     // Start local media
     try {
@@ -841,15 +823,13 @@
     stopCallTimer();
 
     // Reset per-session state so the next join starts clean
-    sendingTrack = false;
-    updateMusicUI(null);
     isScreenSharing = false;
     btnShareScreen.classList.remove('active');
     btnShareScreen.querySelector('.ctrl-label').textContent = 'Share Screen';
     setMicMutedUI(false);
     setCamOffUI(false);
     chatController.reset();
-    [modalInvite, modalMusic, modalSettings].forEach(m => m?.classList.add('hidden'));
+    [modalInvite, modalSettings].forEach(m => m?.classList.add('hidden'));
   }
 
   // --- Participants List UI ---
@@ -941,320 +921,6 @@
     });
   });
 
-  // --- Synchronized Music ---
-  // The server keeps the room's music state; every client plays the track itself, in sync. The DJ
-  // (whoever started the track) and the admin control it: pause, resume, seek, stop.
-  const musicNow = document.getElementById('music-now');
-  const musicNowTitle = document.getElementById('music-now-title');
-  const musicNowDj = document.getElementById('music-now-dj');
-  const musicNowState = document.getElementById('music-now-state');
-  const musicSeek = document.getElementById('music-seek');
-  const musicTimeCurrent = document.getElementById('music-time-current');
-  const musicTimeTotal = document.getElementById('music-time-total');
-  const musicControls = document.getElementById('music-controls');
-  const btnMusicToggle = document.getElementById('btn-music-toggle');
-  const btnMusicBack = document.getElementById('btn-music-back');
-  const btnMusicForward = document.getElementById('btn-music-forward');
-  const btnMusicStop = document.getElementById('btn-music-stop');
-  const musicControlNote = document.getElementById('music-control-note');
-  const musicIdle = document.getElementById('music-idle');
-  const musicStart = document.getElementById('music-start');
-  const musicLockedNote = document.getElementById('music-locked-note');
-  const musicDrop = document.querySelector('.music-drop');
-  const musicFileName = document.getElementById('music-file-name');
-  const musicFileHint = document.getElementById('music-file-hint');
-  const musicVolumeSlider = document.getElementById('music-volume-slider');
-  const musicModalVolume = document.getElementById('music-modal-volume');
-  const MUSIC_VOLUME_KEY = 'vc_music_volume';
-  const btnMusicChange = document.getElementById('btn-music-change');
-  let loadedTrackId = null; // the track the audio element holds
-  let seeking = false; // the DJ is dragging the position slider
-  let sendingTrack = false;
-  let changingTrack = false; // the DJ opened the picker to play a different song
-
-  const formatTime = seconds => {
-    const s = Math.max(0, Math.floor(Number(seconds) || 0));
-    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-  };
-  const musicState = () => clientCore.roomState.musicState;
-  const isMusicController = state => !!state?.playedBy &&
-    (clientCore.currentUser?.role === 'admin' || clientCore.currentUser?.id === state.playedBy.id);
-
-  // Your own music volume, the same in the top bar and the music window, remembered
-  function setMusicVolume(value, save) {
-    const volume = Math.min(1, Math.max(0, Number(value)));
-    sharedAudioElement.volume = volume;
-    musicVolumeSlider.value = String(volume);
-    musicModalVolume.value = String(volume);
-    if (save) {
-      try {
-        localStorage.setItem(MUSIC_VOLUME_KEY, String(volume));
-      } catch (e) {
-        // only means it is not remembered next time
-      }
-    }
-  }
-  setMusicVolume((() => {
-    try {
-      return localStorage.getItem(MUSIC_VOLUME_KEY) ?? 0.8;
-    } catch (e) {
-      return 0.8;
-    }
-  })(), false);
-  musicVolumeSlider.addEventListener('input', () => setMusicVolume(musicVolumeSlider.value, true));
-  musicModalVolume.addEventListener('input', () => setMusicVolume(musicModalVolume.value, true));
-
-  function updateMusicUI(state) {
-    // A paused track still holds the room's music lock, so the bar stays visible
-    if (state && state.playedBy) {
-      const controller = isMusicController(state);
-      roomMusicBar.classList.remove('hidden');
-      musicTrackName.textContent = state.trackInfo?.title || 'Shared Music';
-      musicDjName.textContent = `DJ: ${state.playedBy.username || 'User'}${state.isPlaying ? '' : ' (paused)'}`;
-      btnStopMusicTop.classList.toggle('hidden', !controller);
-      btnToggleMusicTop.classList.toggle('hidden', !controller || (!state.isPlaying && !canResumeMusic(state)));
-      btnToggleMusicTop.innerHTML = iconSvg(state.isPlaying ? 'pause' : 'play');
-      btnToggleMusicTop.title = state.isPlaying ? 'Pause music for everyone' : 'Resume music for everyone';
-      roomMusicBar.classList.toggle('is-paused', !state.isPlaying);
-
-      // Synchronize the audio element. `position` is computed by the server at send time, which
-      // avoids depending on the client and server clocks agreeing.
-      const url = state.trackInfo?.audioDataUrl;
-      if (url) {
-        const trackKey = state.trackId || url.length; // older servers send no track id
-        if (loadedTrackId !== trackKey) {
-          sharedAudioElement.src = url;
-          loadedTrackId = trackKey;
-        }
-        const position = Math.max(0, Number(state.position ?? state.currentTime) || 0);
-        if (Math.abs(sharedAudioElement.currentTime - position) > 1) {
-          sharedAudioElement.currentTime = position;
-        }
-        if (state.isPlaying) {
-          sharedAudioElement.play().catch(e => console.warn('Audio auto-play policy:', e));
-        } else {
-          sharedAudioElement.pause();
-        }
-      }
-    } else {
-      roomMusicBar.classList.add('hidden');
-      sharedAudioElement.pause();
-      sharedAudioElement.removeAttribute('src');
-      sharedAudioElement.load();
-      loadedTrackId = null;
-    }
-    if (sendingTrack && state?.playedBy?.id === clientCore.currentUser?.id) {
-      sendingTrack = false;
-      changingTrack = false;
-      resetMusicPicker();
-    }
-    updateMusicModalView();
-  }
-
-  function renderMusicProgress() {
-    const duration = Number.isFinite(sharedAudioElement.duration) ? sharedAudioElement.duration : 0;
-    musicSeek.max = String(duration);
-    musicTimeTotal.textContent = duration ? formatTime(duration) : '–:––';
-    if (!seeking) {
-      musicSeek.value = String(sharedAudioElement.currentTime || 0);
-      musicTimeCurrent.textContent = formatTime(sharedAudioElement.currentTime);
-    }
-  }
-  sharedAudioElement.addEventListener('timeupdate', renderMusicProgress);
-  sharedAudioElement.addEventListener('loadedmetadata', renderMusicProgress);
-
-  // The server does not know a track's length, so the DJ's client reports the end: the track stays
-  // loaded, paused at the start, and the play button can start it again
-  sharedAudioElement.addEventListener('ended', () => {
-    const state = musicState();
-    if (!state?.isPlaying || !isMusicController(state)) return;
-    clientCore.sendMusicAction({ action: 'pause' });
-    clientCore.sendMusicAction({ action: 'seek', time: 0 });
-  });
-
-  function updateMusicModalView() {
-    const state = musicState();
-    const me = clientCore.currentUser;
-    const active = !!state?.playedBy;
-    const controller = isMusicController(state);
-    const isDj = active && state.playedBy.id === me?.id;
-    const canPlay = me?.permissions?.can_play_music !== false;
-
-    musicNow.classList.toggle('hidden', !active);
-    musicIdle.classList.toggle('hidden', active || !canPlay);
-    if (active) {
-      musicNow.classList.toggle('is-paused', !state.isPlaying);
-      musicNowTitle.textContent = state.trackInfo?.title || 'Shared Music';
-      musicNowDj.textContent = isDj ? 'Played by you' : `Played by ${state.playedBy.username}`;
-      musicNowState.textContent = state.isPlaying ? 'Playing' : 'Paused';
-      musicControls.classList.toggle('hidden', !controller);
-      musicSeek.disabled = !controller;
-      const canResume = canResumeMusic(state);
-      btnMusicToggle.innerHTML = iconSvg(state.isPlaying ? 'pause' : 'play');
-      btnMusicToggle.title = state.isPlaying ? 'Pause for everyone' : 'Resume for everyone';
-      btnMusicToggle.setAttribute('aria-label', state.isPlaying ? 'Pause' : 'Resume');
-      btnMusicToggle.disabled = !state.isPlaying && !canResume;
-      const dj = (clientCore.roomState.participants || []).find(u => u.id === state.playedBy.id);
-      musicControlNote.textContent = !controller
-        ? `Only ${state.playedBy.username} (the DJ)${dj?.role === 'admin' ? '' : ' and the admin'} can pause or skip.`
-        : !state.isPlaying && !canResume ? `This server's version cannot resume for the admin; ${state.playedBy.username} (the DJ) can, or update the server.` : '';
-      renderMusicProgress();
-    }
-
-    // Start a track: when nothing plays, or the DJ choosing to replace their own track
-    if (!active || !isDj) changingTrack = false;
-    btnMusicChange.classList.toggle('hidden', !(canPlay && active && isDj && !changingTrack));
-    musicStart.classList.toggle('hidden', !canPlay || (active && !(isDj && changingTrack)));
-    btnModalPlayMusic.querySelector('span').textContent = sendingTrack ? 'Sending to the room…' : isDj ? 'Play this instead' : 'Play for everyone';
-    btnModalPlayMusic.disabled = sendingTrack || !(musicAudioFileInput.files && musicAudioFileInput.files[0]) || musicDrop.classList.contains('has-error');
-
-    const locked = !canPlay
-      ? 'The admin has turned off music for you.'
-      : active && !isDj ? `${state.playedBy.username} is the DJ right now. You can play your own track when they stop.` : '';
-    musicLockedNote.textContent = locked;
-    musicLockedNote.classList.toggle('hidden', !locked);
-  }
-
-  function showMusicError(message) {
-    musicErrorAlert.textContent = message;
-    musicErrorAlert.classList.toggle('hidden', !message);
-  }
-
-  function resetMusicPicker() {
-    musicAudioFileInput.value = '';
-    musicTrackTitleInput.value = '';
-    musicFileName.textContent = 'Choose an audio file';
-    musicFileHint.textContent = `MP3, WAV, OGG or M4A, up to ${MAX_MUSIC_FILE_BYTES / 1024 / 1024} MB`;
-    musicDrop.classList.remove('has-file', 'has-error');
-    updateMusicModalView();
-  }
-
-  function chooseMusicFile(file) {
-    showMusicError('');
-    if (!file) {
-      resetMusicPicker();
-      return;
-    }
-    const tooLarge = file.size > MAX_MUSIC_FILE_BYTES;
-    const notAudio = file.type && !file.type.startsWith('audio/');
-    musicDrop.classList.add('has-file');
-    musicDrop.classList.toggle('has-error', tooLarge || notAudio);
-    musicFileName.textContent = file.name;
-    musicFileHint.textContent = notAudio
-      ? 'This is not an audio file.'
-      : tooLarge ? `${(file.size / 1048576).toFixed(1)} MB is too large (maximum ${MAX_MUSIC_FILE_BYTES / 1024 / 1024} MB).`
-        : `${(file.size / 1048576).toFixed(1)} MB · click to choose another`;
-    if (!musicTrackTitleInput.value.trim()) musicTrackTitleInput.value = file.name.replace(/\.[^/.]+$/, '');
-    updateMusicModalView();
-  }
-
-  musicAudioFileInput.addEventListener('change', () => chooseMusicFile(musicAudioFileInput.files[0]));
-  // Drag a song onto the picker
-  musicDrop.addEventListener('dragover', e => {
-    e.preventDefault();
-    musicDrop.classList.add('is-dragover');
-  });
-  musicDrop.addEventListener('dragleave', () => musicDrop.classList.remove('is-dragover'));
-  musicDrop.addEventListener('drop', e => {
-    e.preventDefault();
-    musicDrop.classList.remove('is-dragover');
-    const file = e.dataTransfer.files[0];
-    if (!file) return;
-    const files = new DataTransfer();
-    files.items.add(file);
-    musicAudioFileInput.files = files.files;
-    chooseMusicFile(file);
-  });
-
-  btnMusicModal.addEventListener('click', () => {
-    modalMusic.classList.remove('hidden');
-    showMusicError('');
-    changingTrack = false;
-    updateMusicModalView();
-  });
-
-  btnMusicChange.addEventListener('click', () => {
-    changingTrack = true;
-    updateMusicModalView();
-  });
-
-  btnCloseMusicModal.addEventListener('click', () => {
-    modalMusic.classList.add('hidden');
-  });
-
-  btnModalPlayMusic.addEventListener('click', () => {
-    const file = musicAudioFileInput.files && musicAudioFileInput.files[0];
-    if (!file || musicDrop.classList.contains('has-error')) return;
-    const title = musicTrackTitleInput.value.trim() || file.name.replace(/\.[^/.]+$/, '');
-    sendingTrack = true;
-    updateMusicModalView();
-    const reader = new FileReader();
-    reader.onload = e => {
-      if (!clientCore.sendMusicAction({ action: 'play', trackInfo: { title, audioDataUrl: e.target.result } })) {
-        sendingTrack = false;
-        showMusicError('Not connected to the room.');
-        updateMusicModalView();
-      }
-    };
-    reader.onerror = () => {
-      sendingTrack = false;
-      showMusicError('This file could not be read.');
-      updateMusicModalView();
-    };
-    reader.readAsDataURL(file);
-  });
-
-  // DJ controls
-  function toggleMusic() {
-    const state = musicState();
-    if (!isMusicController(state)) return;
-    // A track paused at (or past) its end starts over instead of ending again at once
-    const duration = sharedAudioElement.duration;
-    if (!state.isPlaying && Number.isFinite(duration) && Number(state.position ?? state.currentTime) >= duration - 0.5) {
-      clientCore.sendMusicAction({ action: 'seek', time: 0 });
-    }
-    if (state.isPlaying) clientCore.sendMusicAction({ action: 'pause' });
-    else if (clientCore.supportsFeature('music-resume')) clientCore.sendMusicAction({ action: 'resume' });
-    else if (canReplayMusic(state)) {
-      // Servers before 1.4.0 have no resume: the DJ plays the song again from where it was paused
-      const atEnd = Number.isFinite(duration) && Number(state.position ?? state.currentTime) >= duration - 0.5;
-      const position = atEnd ? 0 : Number(state.position ?? state.currentTime) || 0;
-      clientCore.sendMusicAction({ action: 'play', trackInfo: { title: state.trackInfo.title, audioDataUrl: state.trackInfo.audioDataUrl } });
-      if (position > 0) clientCore.sendMusicAction({ action: 'seek', time: position });
-    }
-  }
-
-  // On servers without resume, only the DJ (who may start their own track again) can continue it
-  function canReplayMusic(state) {
-    return !!(state?.playedBy && state.playedBy.id === clientCore.currentUser?.id && state.trackInfo?.audioDataUrl);
-  }
-
-  function canResumeMusic(state) {
-    return clientCore.supportsFeature('music-resume') || canReplayMusic(state);
-  }
-
-  function seekMusicTo(seconds) {
-    const duration = Number.isFinite(sharedAudioElement.duration) ? sharedAudioElement.duration : Infinity;
-    clientCore.sendMusicAction({ action: 'seek', time: Math.min(Math.max(0, seconds), Math.max(0, duration - 0.5)) });
-  }
-
-  btnMusicToggle.addEventListener('click', toggleMusic);
-  btnToggleMusicTop.addEventListener('click', toggleMusic);
-  btnMusicBack.addEventListener('click', () => seekMusicTo(sharedAudioElement.currentTime - 10));
-  btnMusicForward.addEventListener('click', () => seekMusicTo(sharedAudioElement.currentTime + 10));
-  musicSeek.addEventListener('input', () => {
-    seeking = true;
-    musicTimeCurrent.textContent = formatTime(musicSeek.value);
-  });
-  musicSeek.addEventListener('change', () => {
-    seeking = false;
-    seekMusicTo(Number(musicSeek.value));
-  });
-
-  const stopMusic = () => clientCore.sendMusicAction({ action: 'stop' });
-  btnMusicStop.addEventListener('click', stopMusic);
-  btnStopMusicTop.addEventListener('click', stopMusic);
-
   // --- Device Settings Modal & Hardware Controls ---
   const btnDeviceSettings = document.getElementById('btn-device-settings');
   const modalSettings = document.getElementById('modal-settings');
@@ -1284,15 +950,14 @@
   mediaEngine.setPreferredDevices({ audioinput: startupDevices.audioinput, videoinput: startupDevices.videoinput });
   let speakerId = startupDevices.audiooutput || '';
 
-  // Everyone's voice plays from their video tile; music from the shared audio element
+  // Everyone's voice plays from their video tile
   function applySpeaker(element) {
     if (typeof element.setSinkId !== 'function') return Promise.resolve();
     return element.setSinkId(speakerId === 'default' ? '' : speakerId).catch(e => console.warn('Cannot use this speaker:', e));
   }
   function applySpeakerEverywhere() {
-    return Promise.all([sharedAudioElement, ...videoGrid.querySelectorAll('.peer-tile video')].map(applySpeaker));
+    return Promise.all([...videoGrid.querySelectorAll('.peer-tile video')].map(applySpeaker));
   }
-  applySpeaker(sharedAudioElement);
 
   async function switchDevice(select, kind) {
     const deviceId = select.value;
@@ -1605,7 +1270,6 @@
       if (e.key === 'Escape') {
         modalSettings?.classList.add('hidden');
         modalInvite?.classList.add('hidden');
-        modalMusic?.classList.add('hidden');
         modalLeave?.classList.add('hidden');
       }
       return;
@@ -1620,7 +1284,6 @@
     } else if (e.key === 'Escape') {
       modalSettings?.classList.add('hidden');
       modalInvite?.classList.add('hidden');
-      modalMusic?.classList.add('hidden');
       modalLeave?.classList.add('hidden');
     }
   });
