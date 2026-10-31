@@ -1012,7 +1012,7 @@
       musicTrackName.textContent = state.trackInfo?.title || 'Shared Music';
       musicDjName.textContent = `DJ: ${state.playedBy.username || 'User'}${state.isPlaying ? '' : ' (paused)'}`;
       btnStopMusicTop.classList.toggle('hidden', !controller);
-      btnToggleMusicTop.classList.toggle('hidden', !controller || (!state.isPlaying && !clientCore.supportsFeature('music-resume')));
+      btnToggleMusicTop.classList.toggle('hidden', !controller || (!state.isPlaying && !canResumeMusic(state)));
       btnToggleMusicTop.innerHTML = iconSvg(state.isPlaying ? 'pause' : 'play');
       btnToggleMusicTop.title = state.isPlaying ? 'Pause music for everyone' : 'Resume music for everyone';
       roomMusicBar.classList.toggle('is-paused', !state.isPlaying);
@@ -1089,7 +1089,7 @@
       musicNowState.textContent = state.isPlaying ? 'Playing' : 'Paused';
       musicControls.classList.toggle('hidden', !controller);
       musicSeek.disabled = !controller;
-      const canResume = clientCore.supportsFeature('music-resume');
+      const canResume = canResumeMusic(state);
       btnMusicToggle.innerHTML = iconSvg(state.isPlaying ? 'pause' : 'play');
       btnMusicToggle.title = state.isPlaying ? 'Pause for everyone' : 'Resume for everyone';
       btnMusicToggle.setAttribute('aria-label', state.isPlaying ? 'Pause' : 'Resume');
@@ -1097,7 +1097,7 @@
       const dj = (clientCore.roomState.participants || []).find(u => u.id === state.playedBy.id);
       musicControlNote.textContent = !controller
         ? `Only ${state.playedBy.username} (the DJ)${dj?.role === 'admin' ? '' : ' and the admin'} can pause or skip.`
-        : !state.isPlaying && !canResume ? 'This server is too old to resume a paused track; update it, or stop and play again.' : '';
+        : !state.isPlaying && !canResume ? `This server's version cannot resume for the admin; ${state.playedBy.username} (the DJ) can, or update the server.` : '';
       renderMusicProgress();
     }
 
@@ -1213,7 +1213,24 @@
     if (!state.isPlaying && Number.isFinite(duration) && Number(state.position ?? state.currentTime) >= duration - 0.5) {
       clientCore.sendMusicAction({ action: 'seek', time: 0 });
     }
-    clientCore.sendMusicAction({ action: state.isPlaying ? 'pause' : 'resume' });
+    if (state.isPlaying) clientCore.sendMusicAction({ action: 'pause' });
+    else if (clientCore.supportsFeature('music-resume')) clientCore.sendMusicAction({ action: 'resume' });
+    else if (canReplayMusic(state)) {
+      // Servers before 1.4.0 have no resume: the DJ plays the song again from where it was paused
+      const atEnd = Number.isFinite(duration) && Number(state.position ?? state.currentTime) >= duration - 0.5;
+      const position = atEnd ? 0 : Number(state.position ?? state.currentTime) || 0;
+      clientCore.sendMusicAction({ action: 'play', trackInfo: { title: state.trackInfo.title, audioDataUrl: state.trackInfo.audioDataUrl } });
+      if (position > 0) clientCore.sendMusicAction({ action: 'seek', time: position });
+    }
+  }
+
+  // On servers without resume, only the DJ (who may start their own track again) can continue it
+  function canReplayMusic(state) {
+    return !!(state?.playedBy && state.playedBy.id === clientCore.currentUser?.id && state.trackInfo?.audioDataUrl);
+  }
+
+  function canResumeMusic(state) {
+    return clientCore.supportsFeature('music-resume') || canReplayMusic(state);
   }
 
   function seekMusicTo(seconds) {
