@@ -44,6 +44,20 @@ if (process.platform === 'linux' && linuxSandboxUnavailable()) {
   app.commandLine.appendSwitch('no-sandbox');
 }
 
+// Drawn without the graphics card unless the user turned it on (Devices settings). Its process
+// alone holds 100-210 MB: in a four-person call 412 MB with it, 258 MB without, at about the same
+// CPU use. Read before the app is ready, as Electron requires; a change applies at the next start.
+const DISPLAY_SETTINGS_FILE = path.join(app.getPath('userData'), 'display.json');
+function readDisplaySettings() {
+  try {
+    return JSON.parse(fs.readFileSync(DISPLAY_SETTINGS_FILE, 'utf8')) || {};
+  } catch (e) {
+    return {};
+  }
+}
+const useGraphicsCard = readDisplaySettings().useGraphicsCard === true;
+if (!useGraphicsCard) app.disableHardwareAcceleration();
+
 // Expose real LAN addresses as ICE candidates instead of random .local mDNS names:
 // Linux machines without avahi cannot resolve Windows' mDNS names (and vice versa),
 // which leaves peers on the same network unable to connect.
@@ -132,6 +146,28 @@ ipcMain.handle('trust-server-certificate', (event, origin, fingerprint) => {
   } catch (e) {
     return 'invalid';
   }
+});
+
+// --- Graphics card setting: { saved: what applies from the next start, active: what runs now } ---
+ipcMain.handle('graphics-setting', event => {
+  if (!event.senderFrame || !isAppUrl(event.senderFrame.url)) return null;
+  return { saved: readDisplaySettings().useGraphicsCard === true, active: useGraphicsCard };
+});
+
+ipcMain.handle('set-graphics-setting', (event, on) => {
+  if (!event.senderFrame || !isAppUrl(event.senderFrame.url) || typeof on !== 'boolean') return false;
+  try {
+    fs.writeFileSync(DISPLAY_SETTINGS_FILE, JSON.stringify({ ...readDisplaySettings(), useGraphicsCard: on }));
+    return true;
+  } catch (e) {
+    return false;
+  }
+});
+
+ipcMain.handle('restart-app', event => {
+  if (!event.senderFrame || !isAppUrl(event.senderFrame.url)) return;
+  app.relaunch();
+  app.exit(0);
 });
 
 // --- This computer's firewall (see firewall.js) ---

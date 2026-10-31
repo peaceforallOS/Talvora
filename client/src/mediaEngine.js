@@ -58,6 +58,7 @@ class MediaEngine {
     this.localStream = null;
     this.screenStream = null;
     this.peerConnections = new Map(); // peerId -> RTCPeerConnection
+    this.videoSenders = new WeakMap(); // RTCPeerConnection -> the sender of our one outgoing video (camera or screen)
     this.negotiation = new Map(); // peerId -> { polite, makingOffer, ignoreOffer, queue }
     this.remoteStreams = new Map(); // peerId -> MediaStream aggregating that peer's tracks
     this.audioContext = null;
@@ -84,9 +85,10 @@ class MediaEngine {
   }
 
   /**
-   * Initialize local camera and microphone
+   * Open the microphone (and the camera, if asked) when joining. The camera is usually opened
+   * later with startCamera(), only once the user turns it on.
    */
-  async initLocalMedia({ audio = true, video = true } = {}) {
+  async initLocalMedia({ audio = true, video = false } = {}) {
     // destroy() bumps the generation; a capture that resolves afterwards is discarded
     const generation = this.generation;
     let stream;
@@ -131,21 +133,26 @@ class MediaEngine {
    * While screen sharing, the screen track is sent in place of the camera.
    */
   addLocalTracks(pc) {
-    const senders = pc.getSenders();
-    const isSending = track => senders.some(s => s.track === track);
-    const stream = this.localStream || this.screenStream;
-    const screenTrack = this.screenStream?.getVideoTracks()[0] || null;
-    let hasCamera = false;
+    const audio = this.localStream?.getAudioTracks()[0];
+    if (audio && !pc.getSenders().some(s => s.track === audio)) pc.addTrack(audio, this.localStream);
+    const video = this.screenStream?.getVideoTracks()[0] || this.localStream?.getVideoTracks()[0] || null;
+    if (video) this.sendVideo(pc, video);
+  }
 
-    for (const track of this.localStream ? this.localStream.getTracks() : []) {
-      const outgoing = track.kind === 'video' && screenTrack ? screenTrack : track;
-      if (track.kind === 'video') hasCamera = true;
-      if (!isSending(outgoing)) pc.addTrack(outgoing, stream);
+  /**
+   * Send `track` (camera, screen, or null for nothing) as this connection's video. The first video
+   * adds a sender (one negotiation); later changes reuse it, so turning the camera on and off and
+   * screen sharing need no renegotiation.
+   */
+  sendVideo(pc, track) {
+    if (pc.signalingState === 'closed') return Promise.resolve();
+    const sender = this.videoSenders.get(pc);
+    if (sender && pc.getSenders().includes(sender)) {
+      if (sender.track === track) return Promise.resolve();
+      return sender.replaceTrack(track).catch(e => console.warn('Cannot change the outgoing video:', e));
     }
-
-    if (screenTrack && !hasCamera && !isSending(screenTrack)) {
-      pc.addTrack(screenTrack, stream);
-    }
+    if (track) this.videoSenders.set(pc, pc.addTrack(track, this.localStream || this.screenStream || new MediaStream([track])));
+    return Promise.resolve();
   }
 
   /**
@@ -284,14 +291,44 @@ class MediaEngine {
     return false;
   }
 
-  setVideoEnabled(enabled) {
-    if (!this.localStream) return false;
-    const track = this.localStream.getVideoTracks()[0];
-    if (track) {
-      track.enabled = !!enabled;
-      return track.enabled;
+  /**
+   * Camera: open only while it is on. Off releases the device (its light goes out) and frees the
+   * capture, encoding and preview memory; peers keep the video slot and receive nothing.
+   * Resolves the camera track, or null when the engine was reset meanwhile. Throws when the
+   * camera cannot be opened.
+   */
+  async startCamera() {
+    const existing = this.localStream?.getVideoTracks()[0];
+    if (existing) return existing;
+    const generation = this.generation;
+    const preferred = this.preferredDevices.videoinput ? { deviceId: { ideal: this.preferredDevices.videoinput } } : {};
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { ...VIDEO_CONSTRAINTS, ...preferred } });
+    const track = stream.getVideoTracks()[0];
+    if (generation !== this.generation || !track || this.localStream?.getVideoTracks()[0]) {
+      stream.getTracks().forEach(t => t.stop());
+      return generation === this.generation ? this.localStream?.getVideoTracks()[0] || null : null;
     }
-    return false;
+    if (!this.localStream) this.localStream = new MediaStream();
+    this.localStream.addTrack(track);
+    // While screen sharing, peers keep seeing the screen; the camera follows when sharing stops
+    if (!this.screenStream) {
+      await Promise.all([...this.peerConnections.values()].map(pc => this.sendVideo(pc, track)));
+    }
+    return track;
+  }
+
+  stopCamera() {
+    const track = this.localStream?.getVideoTracks()[0];
+    if (!track) return;
+    this.localStream.removeTrack(track);
+    track.stop();
+    for (const pc of this.peerConnections.values()) {
+      if (this.videoSenders.get(pc)?.track === track) this.sendVideo(pc, null);
+    }
+  }
+
+  get cameraOn() {
+    return !!this.localStream?.getVideoTracks()[0];
   }
 
   // --- Device selection (settings) ---
@@ -338,23 +375,25 @@ class MediaEngine {
     return track;
   }
 
-  // Switch to another camera during the call; while screen sharing, peers keep seeing the screen
+  // Switch to another camera during the call; while screen sharing, peers keep seeing the screen.
+  // With the camera off, the choice is only remembered and used when it is turned on.
   async switchCamera(deviceId) {
+    this.setPreferredDevices({ videoinput: deviceId });
     const current = this.localStream?.getVideoTracks()[0] || null;
+    if (!current) return null;
     const stream = await navigator.mediaDevices.getUserMedia({ video: { ...VIDEO_CONSTRAINTS, deviceId: { exact: deviceId } } });
     const track = stream.getVideoTracks()[0];
-    track.enabled = current ? current.enabled : true;
-    this.setPreferredDevices({ videoinput: deviceId });
-
-    if (!this.localStream) this.localStream = new MediaStream();
-    if (current) this.localStream.removeTrack(current);
-    this.localStream.addTrack(track);
-    for (const pc of this.peerConnections.values()) {
-      const sender = current && pc.getSenders().find(s => s.track === current);
-      if (sender) await sender.replaceTrack(track);
-      else if (!current && !this.screenStream && pc.signalingState !== 'closed') pc.addTrack(track, this.localStream);
+    if (this.localStream?.getVideoTracks()[0] !== current) {
+      // turned off (or the engine reset) while the new camera was opening
+      track.stop();
+      return null;
     }
-    if (current) current.stop();
+    this.localStream.removeTrack(current);
+    this.localStream.addTrack(track);
+    if (!this.screenStream) {
+      await Promise.all([...this.peerConnections.values()].map(pc => this.sendVideo(pc, track)));
+    }
+    current.stop();
     return track;
   }
 
@@ -372,14 +411,9 @@ class MediaEngine {
         this.onScreenShareEnded();
       };
 
-      // Replace the camera track (no renegotiation needed) or add a new video track
+      // Sent in place of the camera
       for (const pc of this.peerConnections.values()) {
-        const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
-        if (sender) {
-          sender.replaceTrack(screenTrack);
-        } else {
-          pc.addTrack(screenTrack, this.localStream || this.screenStream);
-        }
+        this.sendVideo(pc, screenTrack);
       }
 
       return this.screenStream;
@@ -395,16 +429,10 @@ class MediaEngine {
     this.screenStream.getTracks().forEach(t => t.stop());
     this.screenStream = null;
 
-    // Restore the camera track, or drop the screen track if there is no camera
+    // Back to the camera, or to no video when the camera is off
     const camTrack = this.localStream?.getVideoTracks()[0] || null;
     for (const pc of this.peerConnections.values()) {
-      const sender = pc.getSenders().find(s => s.track === screenTrack);
-      if (!sender) continue;
-      if (camTrack) {
-        sender.replaceTrack(camTrack);
-      } else if (pc.signalingState !== 'closed') {
-        pc.removeTrack(sender);
-      }
+      if (this.videoSenders.get(pc)?.track === screenTrack) this.sendVideo(pc, camTrack);
     }
   }
 

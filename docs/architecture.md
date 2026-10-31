@@ -183,6 +183,20 @@ Each user entity in the room state contains a `permissions` object:
 ---
 
 ## 5. Devices and Volume (Client)
+- Everyone joins muted with the camera off. The microphone is opened on join (muted), so unmuting is instant and the
+  settings' input meter works. The camera is opened only while it is on (`MediaEngine.startCamera` / `stopCamera`):
+  off releases the device and its capture, encoding and preview memory. Each connection keeps one video sender
+  (`videoSenders`); the first video adds it (one negotiation), after that camera on/off and screen sharing only call
+  `replaceTrack` (a track, or `null` for nothing). Peers show the avatar from the announced media state, so a sender
+  without a track needs no extra signal.
+- Memory: the app draws without the graphics card by default (`app.disableHardwareAcceleration()`, `client/main.js`).
+  The GPU process alone held 100-210 MB; measured with the private working set of all processes: join screen 181 -> 64
+  MB, two-person call with cameras 311 -> 167 MB, four-person call 412 -> 255 MB, for some more CPU in big calls (four-person
+  grid 12.6% -> 19.1% of an i3-1115G4, one video full screen 26% -> 24%). "Use the graphics card" in the Devices settings
+  stores `{ useGraphicsCard }` in `<userData>/display.json`, read at the next start. Also kept cheap: no background
+  blur over live video (tile labels and buttons), a still join-screen background (a moving one forced the card's blur to
+  redraw every frame: 25% CPU without the GPU), and the device-change listener exists only while the settings are open
+  (otherwise Chromium keeps its video capture service, about 20 MB, running).
 - Settings switch microphone, camera and speaker during the call: the microphone changes only the source of the
   noise-suppression graph (peers keep the same track); the camera is swapped with `replaceTrack`; the speaker is
   applied with `setSinkId` to every voice (peer tiles). Choices are remembered (`localStorage`) and

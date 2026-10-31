@@ -423,6 +423,17 @@
           <select id="select-audio-output" class="device-select" data-icon="volume"></select>
         </div>
 
+        <!-- Desktop app only (see main.js): shown by app.js when the setting is available -->
+        <div id="graphics-setting" class="form-group hidden">
+          <label class="check-row" for="toggle-graphics-card">
+            <input type="checkbox" id="toggle-graphics-card">
+            <span>Use the graphics card</span>
+          </label>
+          <p class="field-hint">Smoother on very large screens, but Talvora then uses about 150 MB more memory.
+            <span id="graphics-restart-note" class="hidden">Applies when Talvora restarts. <button type="button" id="btn-restart-app" class="link-button link-inline">Restart now</button></span>
+          </p>
+        </div>
+
         <div class="keyboard-hints">
           <strong><svg class="icon"><use href="#i-keyboard"/></svg> Keyboard shortcuts</strong>
           <ul>

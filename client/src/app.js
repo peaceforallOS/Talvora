@@ -68,8 +68,10 @@
   let mediaEngine = null;
   let clientCore = null;
   let chatController = null;
-  let isMicMuted = false;
-  let isCamOff = false;
+  // Everyone joins with the microphone muted and the camera off
+  let isMicMuted = true;
+  let isCamOff = true;
+  let cameraStarting = false;
   let isScreenSharing = false;
   let callTimerInterval = null;
 
@@ -501,22 +503,22 @@
     // On narrow screens the panel overlays the video, so start with it closed
     setSidePanelOpen(!window.matchMedia('(max-width: 860px)').matches);
 
+    // Join muted, with the camera off: the user turns them on
+    setMicMutedUI(true);
+    setCamOffUI(true);
     applyPermissionsToUI(user.permissions);
     updateParticipantsUI();
 
-    // Start local media
+    // Open the microphone (muted, so unmuting is instant); the camera opens only when turned on
     try {
-      const stream = await mediaEngine.initLocalMedia({ audio: true, video: true });
+      const stream = await mediaEngine.initLocalMedia({ audio: true });
       if (!stream || !clientCore.currentUser) return; // left or got disconnected while waiting for devices
       localVideo.srcObject = stream;
 
-      // Respect permissions/toggles that changed while devices were being opened
+      // Respect a mute toggled while the microphone was being opened
       mediaEngine.setAudioEnabled(!isMicMuted);
-      mediaEngine.setVideoEnabled(!isCamOff);
       const hasAudio = stream.getAudioTracks().length > 0;
-      const hasVideo = stream.getVideoTracks().length > 0;
-      localAvatarFallback.classList.toggle('hidden', hasVideo && !isCamOff);
-      clientCore.sendMediaState({ audio: hasAudio && !isMicMuted, video: hasVideo && !isCamOff });
+      clientCore.sendMediaState({ audio: hasAudio && !isMicMuted, video: mediaEngine.cameraOn && !isCamOff });
     } catch (e) {
       console.warn('Media capture warning:', e);
       localAvatarFallback.classList.remove('hidden');
@@ -706,9 +708,10 @@
     setStatusIcon(localAudioIcon, muted);
   }
 
+  // Off closes the camera (see MediaEngine.startCamera); turning it on goes through turnCameraOn()
   function setCamOffUI(off) {
     isCamOff = off;
-    mediaEngine.setVideoEnabled(!off);
+    if (off) mediaEngine.stopCamera();
     btnToggleCam.classList.toggle('active', off);
     btnToggleCam.querySelector('.ctrl-label').textContent = off ? 'Start Video' : 'Stop Video';
     const hasVideo = !!mediaEngine.localStream?.getVideoTracks().length;
@@ -730,10 +733,36 @@
     clientCore.sendMediaState({ audio: !isMicMuted });
   });
 
+  async function turnCameraOn() {
+    cameraStarting = true;
+    btnToggleCam.classList.add('is-busy');
+    try {
+      const track = await mediaEngine.startCamera();
+      // Left the room, or video was taken away, while the camera was opening
+      if (!track || !clientCore.currentUser || btnToggleCam.disabled) {
+        mediaEngine.stopCamera();
+        return;
+      }
+      if (!isScreenSharing) localVideo.srcObject = mediaEngine.localStream;
+      setCamOffUI(false);
+      clientCore.sendMediaState({ video: true });
+    } catch (e) {
+      console.warn('Camera unavailable:', e);
+      showToast(`The camera could not be started: ${e.message || e.name}`);
+    } finally {
+      cameraStarting = false;
+      btnToggleCam.classList.remove('is-busy');
+    }
+  }
+
   btnToggleCam.addEventListener('click', () => {
-    if (btnToggleCam.disabled) return;
-    setCamOffUI(!isCamOff);
-    clientCore.sendMediaState({ video: !isCamOff });
+    if (btnToggleCam.disabled || cameraStarting) return;
+    if (isCamOff) {
+      turnCameraOn();
+    } else {
+      setCamOffUI(true);
+      clientCore.sendMediaState({ video: false });
+    }
   });
 
   btnShareScreen.addEventListener('click', async () => {
@@ -826,8 +855,8 @@
     isScreenSharing = false;
     btnShareScreen.classList.remove('active');
     btnShareScreen.querySelector('.ctrl-label').textContent = 'Share Screen';
-    setMicMutedUI(false);
-    setCamOffUI(false);
+    setMicMutedUI(true);
+    setCamOffUI(true);
     chatController.reset();
     [modalInvite, modalSettings].forEach(m => m?.classList.add('hidden'));
   }
@@ -990,8 +1019,31 @@
     btnDeviceSettings.addEventListener('click', () => {
       modalSettings.classList.remove('hidden');
       populateDeviceList();
+      showGraphicsSetting();
     });
   }
+
+  // Graphics card (desktop app only): off by default to save memory; a change applies at the next start
+  const graphicsSetting = document.getElementById('graphics-setting');
+  const toggleGraphicsCard = document.getElementById('toggle-graphics-card');
+  const graphicsRestartNote = document.getElementById('graphics-restart-note');
+  async function showGraphicsSetting() {
+    const setting = await window.videocallNative?.graphicsSetting?.().catch(() => null);
+    graphicsSetting.classList.toggle('hidden', !setting);
+    if (!setting) return;
+    toggleGraphicsCard.checked = setting.saved;
+    graphicsRestartNote.classList.toggle('hidden', setting.saved === setting.active);
+  }
+  toggleGraphicsCard.addEventListener('change', async () => {
+    const saved = await window.videocallNative.setGraphicsSetting(toggleGraphicsCard.checked).catch(() => false);
+    if (!saved) {
+      toggleGraphicsCard.checked = !toggleGraphicsCard.checked;
+      showToast('The setting could not be saved.');
+      return;
+    }
+    showGraphicsSetting();
+  });
+  document.getElementById('btn-restart-app').addEventListener('click', () => window.videocallNative.restartApp());
 
   if (btnCloseSettings) {
     btnCloseSettings.addEventListener('click', () => {
@@ -1130,10 +1182,12 @@
   selectAudioInput.addEventListener('change', () => switchDevice(selectAudioInput, 'audioinput'));
   selectVideoInput.addEventListener('change', () => switchDevice(selectVideoInput, 'videoinput'));
   selectAudioOutput.addEventListener('change', () => switchDevice(selectAudioOutput, 'audiooutput'));
-  // A headset plugged in or out while the settings are open
-  navigator.mediaDevices?.addEventListener?.('devicechange', () => {
-    if (!modalSettings.classList.contains('hidden')) populateDeviceList();
-  });
+  // A headset plugged in or out while the settings are open. Listened for only then: a device-change
+  // listener keeps Chromium's video capture service (about 20 MB) running for as long as it exists.
+  new MutationObserver(() => {
+    if (!navigator.mediaDevices) return;
+    navigator.mediaDevices.ondevicechange = modalSettings.classList.contains('hidden') ? null : () => populateDeviceList();
+  }).observe(modalSettings, { attributes: true, attributeFilter: ['class'] });
 
   // --- Server calculator: what server to rent for a number of people (model in serverSizing.js) ---
   const modalCalculator = document.getElementById('modal-calculator');

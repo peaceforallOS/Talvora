@@ -318,7 +318,7 @@ class ClientCore {
 
     // Video revoked -> forcefully turn off camera
     if (permissions.can_video === false) {
-      this.mediaEngine.setVideoEnabled(false);
+      this.mediaEngine.stopCamera();
       this.sendMediaState({ video: false });
     }
   }

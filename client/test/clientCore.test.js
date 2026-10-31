@@ -73,7 +73,7 @@ async function runClientCoreTests() {
   // Mock mediaEngine
   coreOmid.mediaEngine = {
     setAudioEnabled: val => { if (!val) mediaDisabled = true; },
-    setVideoEnabled: val => {},
+    stopCamera: () => {},
     setIceServers: () => {},
     createPeerConnection: () => {},
     handleSignal: () => {},
