@@ -47,6 +47,28 @@ async function github(url, init = {}) {
   return { res, body };
 }
 
+// Uploads one file, trying again after a dropped connection; returns null, or why it failed
+async function uploadAsset(release, name, file) {
+  const uploadUrl = release.upload_url.replace(/\{.*\}$/, '') + `?name=${encodeURIComponent(name)}`;
+  let problem = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const up = await github(uploadUrl, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: fs.readFileSync(file) });
+      if (up.res.ok) return null;
+      problem = `GitHub answered ${up.res.status}`;
+      if (up.res.status !== 422 && up.res.status < 500) return problem;
+    } catch (err) {
+      problem = err.message;
+    }
+    // An interrupted upload can leave a broken file of that name behind: remove it before trying again
+    const assets = await github(`${API}/releases/${release.id}/assets?per_page=100`).catch(() => null);
+    const broken = assets?.res.ok && assets.body.find(a => a.name === name);
+    if (broken) await github(`${API}/releases/assets/${broken.id}`, { method: 'DELETE' }).catch(() => {});
+    if (attempt < 3) process.stdout.write(`retrying... `);
+  }
+  return problem;
+}
+
 async function main() {
   if (!token) fail('No GitHub login found: sign in with `git push` once, or set GITHUB_TOKEN (see the top of this file).');
   for (const name of ASSETS) {
@@ -61,6 +83,12 @@ async function main() {
   if (existing.res.ok) fail(`Release ${tag} already exists: ${existing.body.html_url}. Raise the version for a new release.`);
   if (existing.res.status === 401 || existing.res.status === 403) fail('GitHub refused the login (it must be allowed to write to the repository).');
 
+  // A draft of this version left by an interrupted run (never visible to users) is replaced
+  const listed = await github(`${API}/releases?per_page=30`);
+  for (const old of (listed.res.ok && Array.isArray(listed.body) ? listed.body : [])) {
+    if (old.draft && old.tag_name === tag) await github(`${API}/releases/${old.id}`, { method: 'DELETE' });
+  }
+
   const created = await github(`${API}/releases`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -73,12 +101,11 @@ async function main() {
   for (const name of ASSETS) {
     const file = path.join(dir, name);
     process.stdout.write(`Uploading ${name} (${Math.ceil(fs.statSync(file).size / 1048576)} MB)... `);
-    const uploadUrl = release.upload_url.replace(/\{.*\}$/, '') + `?name=${encodeURIComponent(name)}`;
-    const up = await github(uploadUrl, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: fs.readFileSync(file) });
-    if (!up.res.ok) {
+    const problem = await uploadAsset(release, name, file);
+    if (problem) {
       console.log('failed');
-      await github(`${API}/releases/${release.id}`, { method: 'DELETE' });
-      fail(`Upload of ${name} failed (${up.res.status}); the draft release was removed. Nothing was published.`);
+      await github(`${API}/releases/${release.id}`, { method: 'DELETE' }).catch(() => {});
+      fail(`Upload of ${name} failed (${problem}); the draft release was removed. Nothing was published.`);
     }
     console.log('done');
   }
