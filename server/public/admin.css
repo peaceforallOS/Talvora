@@ -382,6 +382,31 @@ button { cursor: pointer; }
   animation: rise 0.3s var(--ease);
 }
 .release-banner { margin-bottom: 1rem; }
+.banner-actions { display: flex; gap: 0.5rem; flex-shrink: 0; flex-wrap: wrap; }
+.banner-sub.banner-progress { white-space: normal; overflow: visible; }
+.banner-progress.is-error { color: #ffb4a8; }
+.version-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 0.6rem;
+  margin: -0.25rem 0 0.9rem;
+  font-size: 0.78rem;
+  color: var(--text-faint);
+}
+.version-line.is-error #version-text { color: #ffb4a8; }
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.link-button:disabled { opacity: 0.6; cursor: default; }
 .release-banner .banner-art .icon { width: 22px; height: 22px; color: #fff; }
 .release-banner code { padding: 0.1rem 0.35rem; border-radius: 6px; background: rgba(0, 0, 0, 0.3); }
 .release-banner a { color: inherit; }

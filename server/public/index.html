@@ -135,19 +135,31 @@
         </div>
       </section>
 
+      <!-- This server's version and the last look for a new one -->
+      <div class="version-line">
+        <span id="version-text">Talvora server</span>
+        <button type="button" id="btn-check-release" class="link-button">Check now</button>
+      </div>
+
       <!-- A newer Talvora release on GitHub (see server/src/releases.js) -->
       <section id="release-banner" class="banner release-banner hidden">
         <div class="banner-info">
           <div class="banner-art"><svg class="icon"><use href="#i-download"/></svg></div>
           <div class="banner-text">
             <div class="banner-title" id="release-title">A new Talvora version is available</div>
-            <div class="banner-sub">Run on the server: <code id="release-command">sudo videocall-server update</code>
+            <div class="banner-sub" id="release-sub">Run on the server: <code id="release-command">sudo videocall-server update</code>
               · <a id="release-notes" href="#" target="_blank" rel="noopener noreferrer">What's new</a></div>
+            <div class="banner-sub banner-progress hidden" id="release-progress" role="status"></div>
           </div>
         </div>
-        <button id="btn-copy-release-command" class="btn btn-secondary">
-          <svg class="icon"><use href="#i-copy"/></svg> Copy command
-        </button>
+        <div class="banner-actions" id="release-actions">
+          <button id="btn-update-server" class="btn btn-primary hidden">
+            <svg class="icon"><use href="#i-download"/></svg> Update now
+          </button>
+          <button id="btn-copy-release-command" class="btn btn-secondary">
+            <svg class="icon"><use href="#i-copy"/></svg> Copy command
+          </button>
+        </div>
       </section>
 
       <!-- Participants -->

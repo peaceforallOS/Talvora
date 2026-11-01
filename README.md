@@ -36,13 +36,13 @@ The installer sets up Node.js if needed, HTTPS, the firewall, router port forwar
 ### Updates
 
 - **Apps** check for new versions by themselves and show an **Install** button; one click updates and restarts them.
-- **Servers** show new versions in the management panel. Install one with:
+- **Servers** show new versions in the management panel (checked every hour and whenever the panel is opened, or with **Check now**). Install one with the panel's **Update now** button, or on the server with:
 
 ```bash
 sudo videocall-server update
 ```
 
-It keeps your settings, data and certificates and restarts the server on the new version by itself, whether it runs as the system service or was started by hand with `videocall-server`; it ends by confirming which version is running.
+Either way your settings, data and certificates are kept and the server restarts on the new version by itself, whether it runs as the system service or was started by hand with `videocall-server`; the command ends by confirming which version is running, and the panel reconnects and says so.
 
 ## For developers
 

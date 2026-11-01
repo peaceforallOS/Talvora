@@ -3,6 +3,7 @@
  */
 
 const crypto = require('crypto');
+const fs = require('fs');
 const net = require('net');
 
 const COOKIE_NAME = 'vc_admin_session';
@@ -38,14 +39,48 @@ function clientKey(address) {
   return `${groups.slice(0, 4).map(g => parseInt(g, 16).toString(16)).join(':')}::/64`;
 }
 
+// Sessions are kept by the SHA-256 of their cookie value, so the saved file holds no usable cookie
+const sessionKey = id => crypto.createHash('sha256').update(String(id)).digest('hex');
+
 class AdminSessions {
-  constructor({ ttlMs = SESSION_TTL_MS, idleMs = IDLE_TIMEOUT_MS, secureCookie = false } = {}) {
+  /**
+   * file: where sessions are kept across restarts (so updating the server from the panel does not
+   * sign the admin out); without it they live in memory only
+   */
+  constructor({ ttlMs = SESSION_TTL_MS, idleMs = IDLE_TIMEOUT_MS, secureCookie = false, file = null } = {}) {
     this.ttlMs = ttlMs;
     this.idleMs = idleMs;
     this.secureCookie = secureCookie;
-    this.sessions = new Map(); // session id -> { expiresAt, lastSeen }
+    this.file = file;
+    this.sessions = new Map(); // SHA-256 of session id -> { expiresAt, lastSeen }
     this.failures = new Map(); // client key -> { count, lockedUntil, lastFailure }
     this.inFlight = new Set(); // client keys with a login being checked
+    this.load();
+  }
+
+  // Saved sessions count as active from the restart on: the idle limit starts again
+  load() {
+    if (!this.file) return;
+    try {
+      const saved = JSON.parse(fs.readFileSync(this.file, 'utf8'));
+      const now = Date.now();
+      for (const [key, expiresAt] of Object.entries(saved)) {
+        if (/^[0-9a-f]{64}$/.test(key) && Number.isFinite(expiresAt) && expiresAt > now) this.sessions.set(key, { expiresAt, lastSeen: now });
+      }
+    } catch (e) {
+      // none saved yet
+    }
+  }
+
+  save() {
+    if (!this.file) return;
+    try {
+      const saved = Object.fromEntries([...this.sessions].map(([key, s]) => [key, s.expiresAt]));
+      fs.writeFileSync(`${this.file}.tmp`, JSON.stringify(saved), { mode: 0o600 });
+      fs.renameSync(`${this.file}.tmp`, this.file);
+    } catch (e) {
+      // not writable: sessions still work until the next restart
+    }
   }
 
   static validateNewPassword(password, confirm) {
@@ -69,18 +104,21 @@ class AdminSessions {
     const id = crypto.randomBytes(32).toString('hex');
     const now = Date.now();
     const expiresAt = now + this.ttlMs;
-    this.sessions.set(id, { expiresAt, lastSeen: now });
+    this.sessions.set(sessionKey(id), { expiresAt, lastSeen: now });
+    this.save();
     return { cookie: `${COOKIE_NAME}=${id}; ${this.cookieAttributes()}`, expiresAt };
   }
 
   // Expiry time of the request's session (and marks it as active), or null when there is none
   get(req) {
     const id = parseCookies(req.headers.cookie)[COOKIE_NAME];
-    const session = id ? this.sessions.get(id) : undefined;
+    const key = id ? sessionKey(id) : null;
+    const session = key ? this.sessions.get(key) : undefined;
     if (!session) return null;
     const now = Date.now();
     if (session.expiresAt <= now || now - session.lastSeen > this.idleMs) {
-      this.sessions.delete(id);
+      this.sessions.delete(key);
+      this.save();
       return null;
     }
     session.lastSeen = now;
@@ -90,12 +128,13 @@ class AdminSessions {
   // Ends the request's session; returns a Set-Cookie header value that clears the cookie
   destroy(req) {
     const id = parseCookies(req.headers.cookie)[COOKIE_NAME];
-    if (id) this.sessions.delete(id);
+    if (id && this.sessions.delete(sessionKey(id))) this.save();
     return `${COOKIE_NAME}=; ${this.cookieAttributes()}; Max-Age=0`;
   }
 
   destroyAll() {
     this.sessions.clear();
+    this.save();
   }
 
   prune() {

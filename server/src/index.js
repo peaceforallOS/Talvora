@@ -14,7 +14,8 @@ const TurnRelay = require('./turnServer');
 const AdminSessions = require('./adminSession');
 const CertManager = require('./certManager');
 const PortAccess = require('./portAccess');
-const { ReleaseWatcher, CURRENT_VERSION } = require('./releases');
+const { spawn } = require('child_process');
+const { ReleaseWatcher, CURRENT_VERSION, UPDATE_COMMAND, writeUpdateStatus, readUpdateStatus } = require('./releases');
 let protocol;
 try {
   protocol = require('../../shared/protocol');
@@ -118,10 +119,64 @@ authService.linkSuffix = () => {
 };
 
 const roomManager = new RoomManager(authService.roomId);
-const adminSessions = new AdminSessions({ secureCookie: TLS_ENABLED || String(publicBaseUrl).startsWith('https:') });
+// Kept in data/ so a restart (such as an update started from the panel) does not sign the admin out
+const adminSessions = new AdminSessions({
+  secureCookie: TLS_ENABLED || String(publicBaseUrl).startsWith('https:'),
+  file: path.join(DATA_DIR, 'admin-sessions.json')
+});
 // New Talvora releases on GitHub, shown in the management panel (installed servers; RELEASE_CHECK=on elsewhere)
 const releaseWatcher = new ReleaseWatcher();
 const RELEASE_CHECK = process.env.RELEASE_CHECK ? process.env.RELEASE_CHECK === 'on' : !LOCAL_ONLY;
+const PANEL_RECHECK_MS = 10 * 60 * 1000; // opening the panel looks for a new release if the last look is older
+
+// --- Updating from the panel ---
+// The server cannot replace itself (it runs as an unprivileged user). As the system service it asks
+// the root update service the installer sets up (videocall-server-update.path watches
+// data/update-request); started by hand from an install it may write to, it runs the update itself.
+// Either way the installer then restarts the server on the new version.
+const INSTALL_DIR = path.join(__dirname, '..');
+const UPDATE_STALE_MS = 20 * 60 * 1000;
+const panelUpdater = {
+  method() {
+    if (process.env.INVOCATION_ID) {
+      return fs.existsSync('/etc/systemd/system/videocall-server-update.path') ? 'service' : null;
+    }
+    try {
+      fs.accessSync(INSTALL_DIR, fs.constants.W_OK);
+      return fs.existsSync(path.join(INSTALL_DIR, 'start-server.sh')) ? 'self' : null;
+    } catch (e) {
+      return null;
+    }
+  },
+  start(method) {
+    if (method === 'service') {
+      fs.writeFileSync(path.join(DATA_DIR, 'update-request'), new Date().toISOString());
+      return;
+    }
+    const log = fs.openSync(path.join(INSTALL_DIR, 'update.log'), 'a');
+    try {
+      spawn(process.execPath, [path.join(__dirname, 'releases.js'), 'update'], { cwd: INSTALL_DIR, detached: true, stdio: ['ignore', log, log] }).unref();
+    } finally {
+      fs.closeSync(log);
+    }
+  }
+};
+
+// The last update's progress, as the panel shows it
+function updateStatus() {
+  const status = readUpdateStatus(DATA_DIR);
+  if (!status) return null;
+  const age = Date.now() - Date.parse(status.at);
+  if (!(age < 24 * 60 * 60 * 1000)) return null;
+  // The new version is running: the update is done, whatever the installer is still finishing
+  if (status.state === 'running' && status.version === CURRENT_VERSION) return { ...status, state: 'done', message: `Talvora server ${CURRENT_VERSION} is installed.` };
+  if (status.state === 'running' && age > UPDATE_STALE_MS) return { ...status, state: 'failed', message: 'The update did not finish. Run on the server: ' + UPDATE_COMMAND };
+  return status;
+}
+
+function releaseInfo() {
+  return { ...releaseWatcher.state, canUpdate: !!panelUpdater.method(), update: updateStatus() };
+}
 // A participant's relay credentials stop working the moment they leave or are removed
 roomManager.onParticipantRemoved = user => turnRelay.revokeCredentials(user.id);
 
@@ -289,12 +344,37 @@ const server = (TLS_ENABLED ? https : http).createServer(async (req, res) => {
       roomId: roomManager.roomId,
       participants: roomManager.getAllPublicUsers(),
       network: { ...portAccess.report(), publicBaseUrl },
-      release: releaseWatcher.state,
+      release: (releaseWatcher.refreshIfOlderThan(PANEL_RECHECK_MS), releaseInfo()),
       serverStats: {
         uptime: process.uptime(),
         totalUsers: roomManager.participants.size
       }
     });
+  }
+
+  // "Check now" in the panel
+  if (pathname === '/api/admin/release/check' && req.method === 'POST') {
+    await releaseWatcher.checkNow();
+    return sendJson(res, 200, { release: releaseInfo() });
+  }
+
+  // The panel's Update button: installs the latest release and restarts the server
+  if (pathname === '/api/admin/update' && req.method === 'POST') {
+    const status = updateStatus();
+    if (status && status.state === 'running') return sendJson(res, 409, { error: 'An update is already running.' });
+    const { available, latest } = releaseWatcher.state;
+    if (!available) return sendJson(res, 409, { error: 'This server already runs the latest version.' });
+    const method = panelUpdater.method();
+    if (!method) return sendJson(res, 409, { error: `This server cannot update itself from the panel. Run on the server: ${UPDATE_COMMAND}` });
+    writeUpdateStatus(DATA_DIR, { state: 'running', version: latest, message: `Updating to Talvora server ${latest}...` });
+    try {
+      panelUpdater.start(method);
+    } catch (err) {
+      writeUpdateStatus(DATA_DIR, { state: 'failed', version: latest, message: `The update could not be started (${err.message}). Run on the server: ${UPDATE_COMMAND}` });
+      return sendJson(res, 500, { error: 'The update could not be started.' });
+    }
+    console.log(`UPDATE: the admin started the update to Talvora server ${latest} from the management panel.`);
+    return sendJson(res, 202, { started: true, version: latest });
   }
 
   if (pathname === '/api/admin/permissions' && req.method === 'POST') {
@@ -818,4 +898,4 @@ start().catch(err => {
   process.exit(1);
 });
 
-module.exports = { server, authService, roomManager, adminSessions };
+module.exports = { server, authService, roomManager, adminSessions, releaseWatcher, panelUpdater };

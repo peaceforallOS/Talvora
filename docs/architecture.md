@@ -277,9 +277,18 @@ address and answers 403 once a shared address (an office, a cloud provider) has 
   process downloads (with progress), checks size and SHA-256 and then: Windows runs the installer silently with
   `--updated --force-run` (same folder, install mode and shortcut choices; restarts the app), Linux replaces the
   running AppImage file and starts it again. Leftover downloaded installers are removed on the next start.
-- **Server:** `server/src/releases.js` checks at start and every 6 hours (installed HTTPS servers; `RELEASE_CHECK=on`
-  elsewhere). A newer signed server package appears as a banner in the management panel and once in the log, with
-  the command `sudo videocall-server update`. That command downloads `videocall-server.tar.gz`, checks it against the
+- **Server:** `server/src/releases.js` checks at start, every hour and when the management panel is opened and the
+  last check is over 10 minutes old (installed HTTPS servers; `RELEASE_CHECK=on` elsewhere); the panel shows the
+  version, when it last checked or why the check failed, and a "Check now" button (`POST /api/admin/release/check`).
+  A newer signed server package appears as a banner in the management panel and once in the log, with an
+  **Update now** button and the command `sudo videocall-server update`. The button (`POST /api/admin/update`) cannot
+  install anything itself, since the server runs as an unprivileged user: as the system service it writes
+  `data/update-request`, which `videocall-server-update.path` (set up by the installer) turns into one run of the root
+  `videocall-server-update.service` = `videocall-server update`; a server started by hand from an install it may
+  write to runs that command itself (output in `update.log`). The updater records its progress in
+  `data/update-status.json` (running / failed with the reason / done), which the panel shows; panel sign-ins are kept
+  in `data/admin-sessions.json` (SHA-256 of the cookie only) so the restart does not sign the admin out. The command
+  downloads `videocall-server.tar.gz`, checks it against the
   signed manifest, unpacks it and runs its `install-server.sh`, which keeps settings, data and certificates and
   restarts the server, then waits until `data/running.json` (written by the server once it listens) shows the new
   version and says so. The system service is restarted with systemd (only where systemd runs the machine; a server

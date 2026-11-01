@@ -71,7 +71,34 @@ async function runReleaseTests() {
   answer = null;
   state = await watcher.checkNow();
   assert.ok(!state.available, 'Cleared once nothing newer is published');
+  // One check at a time; opening the panel looks again only when the last look is old
+  let calls = 0;
+  const slow = new releases.ReleaseWatcher({ check: async () => { calls++; await new Promise(r => setTimeout(r, 50)); return null; }, log: () => {} });
+  await Promise.all([slow.checkNow(), slow.checkNow(), slow.checkNow()]);
+  assert.strictEqual(calls, 1, 'Simultaneous checks must share one request');
+  slow.timer = 1; // as if started
+  slow.refreshIfOlderThan(60000);
+  assert.strictEqual(calls, 1, 'A recent check is not repeated');
+  slow.state.checkedAt = new Date(Date.now() - 120000).toISOString();
+  slow.refreshIfOlderThan(60000);
+  await slow.pending;
+  assert.strictEqual(calls, 2, 'An old check is repeated when the panel opens');
+  slow.timer = null;
   console.log('✓ Test 3 Passed: Admin notified once per version, offline handled');
+
+  // 3b. Update progress for the panel: written by the server or the (root) updater, either replacing the other's
+  const os = require('os');
+  const statusDir = fs.mkdtempSync(path.join(os.tmpdir(), 'talvora-status-'));
+  assert.strictEqual(releases.readUpdateStatus(statusDir), null);
+  releases.writeUpdateStatus(statusDir, { state: 'running', version: '9.0.0', message: 'Downloading' });
+  releases.writeUpdateStatus(statusDir, { state: 'failed', version: '9.0.0', message: 'GitHub answered 403' });
+  const status = releases.readUpdateStatus(statusDir);
+  assert.strictEqual(status.state, 'failed');
+  assert.ok(Date.parse(status.at) > Date.now() - 5000, 'The status carries its time');
+  assert.deepStrictEqual(fs.readdirSync(statusDir), ['update-status.json'], 'No temporary files left behind');
+  fs.rmSync(statusDir, { recursive: true, force: true });
+  releases.writeUpdateStatus(path.join(statusDir, 'missing'), { state: 'done' }); // no data folder: ignored
+  console.log('✓ Test 3b Passed: Update progress recorded for the panel');
 
   // 4. App, server and release tools agree
   const key = file => crypto.createPublicKey(fs.readFileSync(path.join(ROOT, file))).export({ type: 'spki', format: 'der' });

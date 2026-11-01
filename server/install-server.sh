@@ -449,8 +449,35 @@ ReadWritePaths=${INSTALL_DIR}/data
 WantedBy=multi-user.target
 EOF
 
+  # The panel's Update button: the server (unprivileged) only writes data/update-request; this root
+  # service then downloads, verifies and installs the latest signed release and restarts the server
+  cat > /etc/systemd/system/videocall-server-update.service << EOF
+[Unit]
+Description=Talvora server update (requested from the management panel)
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/rm -f ${INSTALL_DIR}/data/update-request
+ExecStart=${LAUNCHER} update
+TimeoutStartSec=15min
+EOF
+
+  cat > /etc/systemd/system/videocall-server-update.path << EOF
+[Unit]
+Description=Talvora server: watch for update requests from the management panel
+
+[Path]
+PathExists=${INSTALL_DIR}/data/update-request
+Unit=videocall-server-update.service
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  rm -f "${INSTALL_DIR}/data/update-request"
   systemctl daemon-reload
   systemctl enable videocall-server
+  systemctl enable --now videocall-server-update.path >/dev/null 2>&1 || true
   # A server started by hand from this folder would keep the ports (and the old version)
   SERVICE_PID="$(systemctl show -p MainPID --value videocall-server 2>/dev/null || echo 0)"
   for pid in $(running_server_pids); do

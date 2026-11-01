@@ -15,7 +15,8 @@ const fs = require('fs');
 process.env.VIDEOCALL_CONFIG = path.join(os.tmpdir(), `videocall-admin-test-${process.pid}.json`);
 process.env.TURN_PORT = '0';
 process.on('exit', () => fs.rmSync(process.env.VIDEOCALL_CONFIG, { force: true }));
-const { server, authService, roomManager, adminSessions } = require('../src/index');
+const { server, authService, roomManager, adminSessions, releaseWatcher, panelUpdater } = require('../src/index');
+const AdminSessions = require('../src/adminSession');
 
 const BASE_URL = 'http://localhost:8098';
 
@@ -267,6 +268,60 @@ async function runAdminPanelTests() {
   assert.strictEqual(removeAdminRes.statusCode, 400, 'The admin must not be removable');
   [first.sock, retry.sock, rejoin.sock].forEach(sock => sock.close());
   console.log('✓ Test 9 Passed: Remove User kicked the user, revoked their link, and a new invite works');
+
+  // 9b. Updating from the panel: only when a newer release exists and the server can ask for it;
+  // the request goes to the root update service (data/update-request), progress to update-status.json
+  const dataDir = path.dirname(process.env.VIDEOCALL_CONFIG);
+  const requestFile = path.join(dataDir, 'update-request');
+  const statusFile = path.join(dataDir, 'update-status.json');
+  fs.rmSync(requestFile, { force: true });
+  fs.rmSync(statusFile, { force: true });
+  const update = () => post('/api/admin/update', {});
+  assert.strictEqual((await update()).statusCode, 409, 'Nothing to update to');
+  releaseWatcher.check = async () => ({ version: '99.0.0', releaseUrl: 'https://example/r' });
+  const checked = await post('/api/admin/release/check', {});
+  assert.strictEqual(checked.statusCode, 200);
+  assert.ok(checked.json.release.available && checked.json.release.latest === '99.0.0', '"Check now" must find the new release');
+  const realMethod = panelUpdater.method;
+  panelUpdater.method = () => null; // e.g. a system install without the update service
+  const noWay = await update();
+  assert.strictEqual(noWay.statusCode, 409);
+  assert.ok(noWay.json.error.includes('sudo videocall-server update'), 'Without a way to update, the panel names the command');
+  panelUpdater.method = () => 'service';
+  let panelInfo = (await httpRequest({ host: 'localhost', port: 8098, path: '/api/admin/info', method: 'GET' })).json;
+  assert.ok(panelInfo.release.canUpdate, 'The panel must offer the Update button');
+  const started = await update();
+  assert.strictEqual(started.statusCode, 202, 'Update not started');
+  assert.ok(fs.existsSync(requestFile), 'The request for the root update service was not written');
+  panelInfo = (await httpRequest({ host: 'localhost', port: 8098, path: '/api/admin/info', method: 'GET' })).json;
+  assert.strictEqual(panelInfo.release.update.state, 'running');
+  assert.strictEqual(panelInfo.release.update.version, '99.0.0');
+  assert.strictEqual((await update()).statusCode, 409, 'A second update must wait for the first');
+  // The updater (another process, possibly root) reports a failure; the panel shows it and allows a retry
+  require('../src/releases').writeUpdateStatus(dataDir, { state: 'failed', version: '99.0.0', message: 'Could not check for updates: GitHub answered 403' });
+  panelInfo = (await httpRequest({ host: 'localhost', port: 8098, path: '/api/admin/info', method: 'GET' })).json;
+  assert.strictEqual(panelInfo.release.update.state, 'failed');
+  assert.ok(panelInfo.release.update.message.includes('403'));
+  panelUpdater.method = realMethod;
+  releaseWatcher.state = { ...releaseWatcher.state, available: false, latest: null };
+  fs.rmSync(requestFile, { force: true });
+  fs.rmSync(statusFile, { force: true });
+  const panelScript = fs.readFileSync(path.join(__dirname, '../public/admin.js'), 'utf8');
+  assert.ok(panelScript.includes("'/api/admin/update'") && panelScript.includes("'/api/admin/release/check'"), 'The panel must call the update and check APIs');
+  console.log('✓ Test 9b Passed: Update and "Check now" from the panel, with progress and errors');
+
+  // 9c. Panel sign-ins survive a restart (an update restarts the server); the saved file holds no usable cookie
+  const sessionFile = path.join(dataDir, `admin-sessions-test-${process.pid}.json`);
+  const before = new AdminSessions({ file: sessionFile });
+  const cookie = before.create().cookie.split(';')[0];
+  const asRequest = c => ({ headers: { cookie: c } });
+  const after = new AdminSessions({ file: sessionFile });
+  assert.ok(after.get(asRequest(cookie)), 'Session lost on restart');
+  assert.ok(!fs.readFileSync(sessionFile, 'utf8').includes(cookie.split('=')[1]), 'The session cookie must not be saved as is');
+  after.destroy(asRequest(cookie));
+  assert.strictEqual(new AdminSessions({ file: sessionFile }).get(asRequest(cookie)), null, 'Signing out must also end the saved session');
+  fs.rmSync(sessionFile, { force: true });
+  console.log('✓ Test 9c Passed: Panel sign-ins survive a restart; signing out ends them');
 
   // 10. Sign out, wrong/right password, lockout, the old token alone, and the 3-hour limit
   await post('/api/admin/logout', {});

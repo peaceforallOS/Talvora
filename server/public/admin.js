@@ -242,21 +242,122 @@
       }
     } catch (err) {
       console.warn('Network or server error while polling:', err);
+      // The server is restarting on the version this panel installed
+      if (updatingTo) showProgress(`Restarting the server on Talvora ${updatingTo}… this page reconnects by itself.`);
     }
   }
 
-  // A newer server release on GitHub: the admin installs it with one command on the server
+  // A newer server release on GitHub: installed with the Update button (the server restarts on it)
+  // or with one command on the server
   const releaseBanner = document.getElementById('release-banner');
+  const releaseTitle = document.getElementById('release-title');
+  const releaseSub = document.getElementById('release-sub');
+  const releaseProgress = document.getElementById('release-progress');
+  const releaseActions = document.getElementById('release-actions');
+  const btnUpdateServer = document.getElementById('btn-update-server');
+  const btnCheckRelease = document.getElementById('btn-check-release');
+  const versionLine = document.querySelector('.version-line');
+  const versionText = document.getElementById('version-text');
+  let lastRelease = null;
+  let updatingTo = null; // version this panel is installing; cleared once the server runs it
+
+  function minutesAgo(iso) {
+    const mins = Math.floor((Date.now() - Date.parse(iso)) / 60000);
+    return mins < 1 ? 'just now' : mins < 60 ? `${mins} min ago` : `${Math.floor(mins / 60)} h ago`;
+  }
+
+  function renderVersionLine(release) {
+    let text = `Talvora server ${release.current}`;
+    if (release.available) text += ` · version ${release.latest} is available`;
+    else if (release.error) text += ` · could not check for updates (${release.error})`;
+    else if (release.checkedAt) text += ` · up to date (checked ${minutesAgo(release.checkedAt)})`;
+    versionText.textContent = text;
+    versionLine.classList.toggle('is-error', !release.available && !!release.error);
+  }
+
+  function showProgress(message, isError = false) {
+    releaseProgress.textContent = message;
+    releaseProgress.classList.toggle('is-error', isError);
+    releaseProgress.classList.remove('hidden');
+  }
+
   function renderRelease(release) {
-    if (!release || !release.available) {
+    if (!release) return;
+    lastRelease = release;
+    renderVersionLine(release);
+    const update = release.update;
+
+    // The server now runs the version this panel installed, or the update failed (shown below)
+    if (updatingTo && release.current === updatingTo) {
+      showToast(`Talvora server ${updatingTo} is installed and running.`);
+      updatingTo = null;
+    } else if (updatingTo && update && update.state === 'failed') {
+      updatingTo = null;
+    }
+    if (update && update.state === 'running' && update.version !== release.current) updatingTo = update.version;
+
+    if (updatingTo) {
+      releaseTitle.textContent = `Updating to Talvora ${updatingTo}…`;
+      releaseSub.classList.add('hidden');
+      releaseActions.classList.add('hidden');
+      showProgress(`${update && update.state === 'running' ? update.message : 'Starting the update…'} The server restarts on the new version; this page reconnects by itself.`);
+      releaseBanner.classList.remove('hidden');
+      return;
+    }
+    if (!release.available) {
       releaseBanner.classList.add('hidden');
       return;
     }
-    document.getElementById('release-title').textContent = `Talvora ${release.latest} is available (this server runs ${release.current})`;
+    releaseTitle.textContent = `Talvora ${release.latest} is available (this server runs ${release.current})`;
     document.getElementById('release-command').textContent = release.command;
     document.getElementById('release-notes').href = release.releaseUrl || '#';
+    releaseSub.classList.remove('hidden');
+    releaseActions.classList.remove('hidden');
+    btnUpdateServer.classList.toggle('hidden', !release.canUpdate);
+    btnUpdateServer.disabled = false;
+    if (update && update.state === 'failed' && update.version === release.latest) showProgress(update.message, true);
+    else releaseProgress.classList.add('hidden');
     releaseBanner.classList.remove('hidden');
   }
+
+  btnUpdateServer.addEventListener('click', async () => {
+    const version = lastRelease && lastRelease.latest;
+    if (!version) return;
+    if (!confirm(`Update this server to Talvora ${version} now?\n\nThe server restarts on the new version: everyone in a call is disconnected and joins again. Your settings, invite links and certificates are kept.`)) return;
+    btnUpdateServer.disabled = true;
+    try {
+      const res = await adminPost('/api/admin/update', {});
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 202) {
+        updatingTo = data.version || version;
+        renderRelease({ ...lastRelease, update: { state: 'running', version: updatingTo, message: 'Starting the update…' } });
+      } else if (res.status !== 401) {
+        showToast(data.error || 'The update could not be started.');
+        btnUpdateServer.disabled = false;
+      }
+    } catch (err) {
+      showToast('Network error starting the update');
+      btnUpdateServer.disabled = false;
+    }
+  });
+
+  btnCheckRelease.addEventListener('click', async () => {
+    btnCheckRelease.disabled = true;
+    versionText.textContent = 'Checking for a new version…';
+    try {
+      const res = await adminPost('/api/admin/release/check', {});
+      if (res.ok) {
+        const { release } = await res.json();
+        renderRelease(release);
+        if (!release.available && !release.error) showToast(`Talvora server ${release.current} is the latest version.`);
+      }
+    } catch (err) {
+      showToast('Network error checking for updates');
+    } finally {
+      btnCheckRelease.disabled = false;
+      if (lastRelease) renderVersionLine(lastRelease);
+    }
+  });
 
   document.getElementById('btn-copy-release-command').addEventListener('click', () => {
     const command = document.getElementById('release-command').textContent;
