@@ -17,18 +17,23 @@ const entry = { name: 'videocall-server.tar.gz', size: tarball.length, sha256: c
 const manifestFor = version => JSON.stringify({ version, files: { server: entry } });
 const sign = (text, key = privateKey) => crypto.sign(null, Buffer.from(text), key).toString('base64');
 
+// GitHub's direct release downloads: /latest/download/<file> and /download/v<version>/<file>
+// (never the API, which is rate limited); `files` are the latest release's, published as v9.0.0
+const RELEASES = 'https://github.example/releases';
+const requested = [];
 function fakeGitHub(files, status = 200) {
-  const base = 'https://github.example/download/';
-  const release = { html_url: 'https://github.com/peaceforallOS/Talvora/releases/tag/v9.0.0', assets: Object.keys(files).map(name => ({ name, browser_download_url: base + name })) };
-  return async url => (url.startsWith('https://api.github')
-    ? new Response(JSON.stringify(release), { status })
-    : new Response(files[url.slice(base.length)]));
+  return async url => {
+    requested.push(url);
+    if (status !== 200) return new Response('', { status });
+    const m = url.match(/^https:\/\/github\.example\/releases\/(?:latest\/download|download\/v9\.0\.0)\/([^/]+)$/);
+    return m && m[1] in files ? new Response(files[m[1]]) : new Response('Not Found', { status: 404 });
+  };
 }
 
 async function runReleaseTests() {
   console.log('--- Starting Release Tests ---');
   const check = (files, currentVersion = '1.2.0', status) =>
-    releases.latestServerRelease({ currentVersion, publicKey, fetchImpl: fakeGitHub(files, status) });
+    releases.latestServerRelease({ currentVersion, publicKey, fetchImpl: fakeGitHub(files, status), releasesUrl: RELEASES });
 
   // 1. A newer signed server release is found; same/older versions and missing releases are not
   const v9 = manifestFor('9.0.0');
@@ -36,10 +41,13 @@ async function runReleaseTests() {
   const found = await check(files);
   assert.strictEqual(found.version, '9.0.0');
   assert.strictEqual(found.sha256, entry.sha256);
-  assert.ok(found.releaseUrl.includes('/releases/tag/'));
+  assert.strictEqual(found.releaseUrl, `${RELEASES}/tag/v9.0.0`);
+  assert.strictEqual(found.downloadUrl, `${RELEASES}/download/v9.0.0/videocall-server.tar.gz`, 'The package comes from the release the manifest names');
   assert.strictEqual(await check(files, '9.0.0'), null, 'Already up to date');
   assert.strictEqual(await check(files, '9.1.0'), null, 'Never offer an older version');
-  assert.strictEqual(await check({}, '1.2.0', 404), null, 'Nothing published yet');
+  assert.strictEqual(await check({}, '1.2.0'), null, 'Nothing published yet');
+  await assert.rejects(check(files, '1.2.0', 403), /GitHub answered 403/);
+  assert.ok(requested.every(url => !url.includes('api.github')), 'Release checks must not use the rate-limited GitHub API');
   console.log('✓ Test 1 Passed: Newer signed server release detected');
 
   // 2. Forged signatures are refused
@@ -71,6 +79,9 @@ async function runReleaseTests() {
   const clientVersion = require(path.join(ROOT, 'client/package.json')).version;
   assert.strictEqual(releases.CURRENT_VERSION, clientVersion, 'Client and server versions must match (one release = one version)');
   for (const file of ['client/updater.js', 'scripts/publish-release.js']) {
+    if (file !== 'scripts/publish-release.js') {
+      assert.ok(!fs.readFileSync(path.join(ROOT, file), 'utf8').includes('api.github.com'), `${file} must not use the rate-limited GitHub API`);
+    }
     assert.ok(fs.readFileSync(path.join(ROOT, file), 'utf8').includes(`'${releases.RELEASES_REPO}'`), `${file} must use ${releases.RELEASES_REPO}`);
   }
   console.log('✓ Test 4 Passed: App, server and release tools use the same key, version and repository');

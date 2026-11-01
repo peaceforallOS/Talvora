@@ -61,34 +61,36 @@ assert.throws(() => updater.verifyPackage(Buffer.from(pkg).fill(0x41, 0, 1), upd
 console.log('✓ Test 4 Passed: Downloads verified by size and SHA-256');
 
 // 4b. GitHub: the latest release's signed manifest is checked, its file found and downloaded with progress
+// GitHub's direct release downloads: /latest/download/<file> and /download/v<version>/<file> (never
+// the API, which is rate limited); `files` are the latest release's, published as v1.2.0
+const RELEASES = 'https://github.example/releases';
+const requested = [];
 function fakeGitHub(files, status = 200) {
-  const base = 'https://github.example/download/';
-  const release = {
-    html_url: 'https://github.com/peaceforallOS/Talvora/releases/tag/v1.2.0',
-    assets: Object.keys(files).map(name => ({ name, browser_download_url: base + name }))
-  };
   return async url => {
-    if (url.startsWith('https://api.github')) return new Response(status === 200 ? JSON.stringify(release) : '{}', { status });
-    const name = url.slice(base.length);
-    return name in files ? new Response(files[name]) : new Response('missing', { status: 404 });
+    requested.push(url);
+    if (status !== 200) return new Response('', { status });
+    const m = url.match(/^https:\/\/github\.example\/releases\/(?:latest\/download|download\/v1\.2\.0)\/([^/]+)$/);
+    return m && m[1] in files ? new Response(files[m[1]]) : new Response('missing', { status: 404 });
   };
 }
 (async () => {
   const github = fakeGitHub({ 'manifest.json': v2, 'manifest.sig': signed(v2), 'Talvora-Setup.exe': pkg });
-  const found = await updater.checkForUpdate({ currentVersion: '1.1.0', platform: 'win32', fetchImpl: github, publicKey });
+  const found = await updater.checkForUpdate({ currentVersion: '1.1.0', platform: 'win32', fetchImpl: github, publicKey, releasesUrl: RELEASES });
   assert.strictEqual(found.version, '1.2.0');
-  assert.strictEqual(found.downloadUrl, 'https://github.example/download/Talvora-Setup.exe');
-  assert.ok(found.releaseUrl.endsWith('/v1.2.0'));
+  assert.strictEqual(found.downloadUrl, `${RELEASES}/download/v1.2.0/Talvora-Setup.exe`);
+  assert.strictEqual(found.releaseUrl, `${RELEASES}/tag/v1.2.0`);
   const progress = [];
   const bytes = await updater.download(found, f => progress.push(f), github);
   updater.verifyPackage(bytes, found);
   assert.strictEqual(progress[progress.length - 1], 1, 'Progress must reach 100%');
 
-  assert.strictEqual(await updater.checkForUpdate({ currentVersion: '1.2.0', platform: 'win32', fetchImpl: github, publicKey }), null, 'Up to date');
-  assert.strictEqual(await updater.checkForUpdate({ currentVersion: '1.1.0', platform: 'win32', fetchImpl: fakeGitHub({}, 404), publicKey }), null,
+  assert.strictEqual(await updater.checkForUpdate({ currentVersion: '1.2.0', platform: 'win32', fetchImpl: github, publicKey, releasesUrl: RELEASES }), null, 'Up to date');
+  assert.strictEqual(await updater.checkForUpdate({ currentVersion: '1.1.0', platform: 'win32', fetchImpl: fakeGitHub({}), publicKey, releasesUrl: RELEASES }), null,
     'No release published yet');
+  await assert.rejects(updater.checkForUpdate({ currentVersion: '1.1.0', platform: 'win32', fetchImpl: fakeGitHub({}, 403), publicKey, releasesUrl: RELEASES }), /GitHub answered 403/);
   const forged = fakeGitHub({ 'manifest.json': v2, 'manifest.sig': crypto.sign(null, Buffer.from(v2), foreign).toString('base64'), 'Talvora-Setup.exe': pkg });
-  await assert.rejects(updater.checkForUpdate({ currentVersion: '1.1.0', platform: 'win32', fetchImpl: forged, publicKey }), /not signed/);
+  await assert.rejects(updater.checkForUpdate({ currentVersion: '1.1.0', platform: 'win32', fetchImpl: forged, publicKey, releasesUrl: RELEASES }), /not signed/);
+  assert.ok(requested.every(url => !url.includes('api.github')), 'Update checks must not use the rate-limited GitHub API');
   const bigger = fakeGitHub({ 'manifest.json': v2, 'manifest.sig': signed(v2), 'Talvora-Setup.exe': Buffer.concat([pkg, pkg]) });
   await assert.rejects(updater.download(found, () => {}, bigger), /larger than announced/);
   assert.strictEqual(updater.RELEASES_REPO, 'peaceforallOS/Talvora');

@@ -18,8 +18,10 @@ const { spawn } = require('child_process');
 
 const PUBLIC_KEY = crypto.createPublicKey(fs.readFileSync(path.join(__dirname, 'release-key.pub.pem')));
 const RELEASES_REPO = 'peaceforallOS/Talvora';
-const LATEST_RELEASE_URL = `https://api.github.com/repos/${RELEASES_REPO}/releases/latest`;
-const HEADERS = { 'User-Agent': 'Talvora-updater', Accept: 'application/vnd.github+json' };
+// Release files are downloaded directly, never through GitHub's API: that allows only 60 requests an
+// hour per internet address, which computers sharing an address (an office, a cloud provider) run out of
+const RELEASES_URL = `https://github.com/${RELEASES_REPO}/releases`;
+const HEADERS = { 'User-Agent': 'Talvora-updater' };
 
 // "1.10.2" > "1.9.0"; anything that is not x.y.z is never newer
 function isNewer(candidate, current) {
@@ -51,40 +53,47 @@ function verifyManifest(manifestText, signature, { currentVersion, platform = pr
 }
 
 /**
- * The latest GitHub release's signed manifest and the download address of each of its files,
- * or null when nothing is published yet.
+ * The latest GitHub release's signed manifest, the download address of each of its files and its
+ * page, or null when nothing is published yet. The signature and files are taken from the release
+ * the manifest names, so a release published meanwhile cannot mix in.
  */
-async function fetchLatestRelease(fetchImpl = fetch, url = LATEST_RELEASE_URL) {
-  const res = await fetchImpl(url, { headers: HEADERS });
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`GitHub answered ${res.status}`);
-  const release = await res.json();
-  const assets = Object.fromEntries((release.assets || []).map(a => [a.name, a.browser_download_url]));
-  if (!assets['manifest.json'] || !assets['manifest.sig']) return null;
-  const text = async asset => {
-    const r = await fetchImpl(asset, { headers: { 'User-Agent': HEADERS['User-Agent'] } });
+async function fetchLatestRelease(fetchImpl = fetch, releasesUrl = RELEASES_URL) {
+  const text = async url => {
+    const r = await fetchImpl(url, { headers: HEADERS });
+    if (r.status === 404) return null;
     if (!r.ok) throw new Error(`GitHub answered ${r.status}`);
     return r.text();
   };
-  const [manifest, signature] = await Promise.all([text(assets['manifest.json']), text(assets['manifest.sig'])]);
-  return { manifest, signature: signature.trim(), assets, releaseUrl: release.html_url };
+  const manifest = await text(`${releasesUrl}/latest/download/manifest.json`);
+  if (manifest === null) return null;
+  let version;
+  try {
+    version = JSON.parse(manifest).version; // not trusted yet: only picks the release to read
+  } catch (e) {
+    throw new Error('The update manifest is malformed.');
+  }
+  if (!/^\d+\.\d+\.\d+$/.test(String(version))) throw new Error('The update manifest is malformed.');
+  const tag = `${releasesUrl}/download/v${version}`;
+  const signature = await text(`${tag}/manifest.sig`);
+  if (signature === null) return null;
+  return { manifest, signature: signature.trim(), fileUrl: name => `${tag}/${name}`, releaseUrl: `${releasesUrl}/tag/v${version}` };
 }
 
 /**
  * The update for this system from the latest release, or null. Throws when the release is not
  * validly signed (or GitHub cannot be reached).
  */
-async function checkForUpdate({ currentVersion, platform = process.platform, fetchImpl = fetch, publicKey = PUBLIC_KEY, url = LATEST_RELEASE_URL }) {
-  const release = await fetchLatestRelease(fetchImpl, url);
+async function checkForUpdate({ currentVersion, platform = process.platform, fetchImpl = fetch, publicKey = PUBLIC_KEY, releasesUrl = RELEASES_URL }) {
+  const release = await fetchLatestRelease(fetchImpl, releasesUrl);
   if (!release) return null;
   const update = verifyManifest(release.manifest, release.signature, { currentVersion, platform, publicKey });
-  if (!update || !release.assets[update.name]) return null;
-  return { ...update, downloadUrl: release.assets[update.name], releaseUrl: release.releaseUrl };
+  if (!update) return null;
+  return { ...update, downloadUrl: release.fileUrl(update.name), releaseUrl: release.releaseUrl };
 }
 
 // Downloads an update, reporting progress (0..1); never more than the manifest's size
 async function download(update, onProgress = () => {}, fetchImpl = fetch) {
-  const res = await fetchImpl(update.downloadUrl, { headers: { 'User-Agent': HEADERS['User-Agent'] } });
+  const res = await fetchImpl(update.downloadUrl, { headers: HEADERS });
   if (!res.ok) throw new Error(`the download failed (${res.status})`);
   const bytes = Buffer.alloc(update.size);
   let received = 0;

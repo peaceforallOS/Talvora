@@ -256,7 +256,10 @@ participants' side) instead of being sized.
 
 ### Updates (GitHub releases)
 New versions are published as releases of https://github.com/peaceforallOS/Talvora (public). Apps and servers
-check the latest release; they trust it only if its manifest is signed with the release key.
+check the latest release; they trust it only if its manifest is signed with the release key. They read the release
+files directly (`releases/latest/download/manifest.json`, then the signature and package from `releases/download/vX.Y.Z/`
+of the version that manifest names), never through GitHub's API, which allows only 60 requests an hour per internet
+address and answers 403 once a shared address (an office, a cloud provider) has used them up.
 - **Release:** give `client/package.json` and `server/package.json` the same new `version`; build the Windows
   installer on Windows, then the AppImage + server package on Linux/WSL. `package-deliverables.sh` puts all three
   into `dist/release/` and signs them with `scripts/sign-updates.js`: `manifest.json` (version; per system `win32`,
