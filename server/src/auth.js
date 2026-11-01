@@ -101,7 +101,10 @@ class AuthService {
         if (perms && typeof perms === 'object' && !(name in this.permissionOverrides)) {
           // Only permissions that still exist (files from older versions may hold removed ones)
           const known = Object.keys(createDefaultPermissions());
-          this.permissionOverrides[name] = Object.fromEntries(Object.entries(perms).filter(([key]) => known.includes(key)));
+          const kept = Object.fromEntries(Object.entries(perms).filter(([key]) => known.includes(key)));
+          // Before 1.10.0 the Video switch also allowed screen sharing: whoever had it keeps sharing
+          if (kept.can_video === true && !('can_screen' in kept)) kept.can_screen = true;
+          this.permissionOverrides[name] = kept;
         }
       }
     }

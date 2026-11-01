@@ -178,9 +178,13 @@ async function runAdminPanelTests() {
   console.log('✓ Test 6 Passed: In-panel invite link generator generated valid user-locked link');
 
   // 7. The panel offers exactly the permissions the app has
-  assert.deepStrictEqual(Object.keys(roomManager.getParticipant(tester1.id).permissions).sort(), ['can_audio', 'can_chat', 'can_invite', 'can_video'],
-    'Unexpected permissions');
-  console.log('✓ Test 7 Passed: Participants carry only audio, video, chat and invite permissions');
+  assert.deepStrictEqual(Object.keys(roomManager.getParticipant(tester1.id).permissions).sort(),
+    ['can_audio', 'can_chat', 'can_invite', 'can_screen', 'can_video'], 'Unexpected permissions');
+  const panelPage = fs.readFileSync(path.join(__dirname, '../public/admin.js'), 'utf8');
+  for (const key of ['can_audio', 'can_video', 'can_screen', 'can_chat', 'can_invite']) {
+    assert.ok(panelPage.includes(`createSwitch(user.id, '${key}'`), `The panel has no switch for ${key}`);
+  }
+  console.log('✓ Test 7 Passed: Participants carry audio, video, screen, chat and invite permissions, each with its own switch');
 
   // 8. Test Kick User API
   const kickRes = await httpRequest({
@@ -221,6 +225,13 @@ async function runAdminPanelTests() {
   saved.permissionOverrides.tester1.can_old_feature = false;
   fs.writeFileSync(process.env.VIDEOCALL_CONFIG, JSON.stringify(saved));
   assert.ok(!('can_old_feature' in new AuthService().permissionOverrides.tester1), 'Unknown saved permissions must be dropped');
+  // Saved before screen sharing had its own switch: Video allowed it, so whoever had Video keeps it
+  saved.permissionOverrides.olduser = { can_video: true, can_chat: true };
+  saved.permissionOverrides.oldquiet = { can_video: false };
+  fs.writeFileSync(process.env.VIDEOCALL_CONFIG, JSON.stringify(saved));
+  const migrated = new AuthService().permissionOverrides;
+  assert.strictEqual(migrated.olduser.can_screen, true, 'Video granted before 1.10.0 must keep screen sharing');
+  assert.ok(!('can_screen' in migrated.oldquiet), 'Without video before, screen sharing stays at its default (off)');
   roomManager.kickParticipant(roomManager.getParticipantByUsername('Tester1').id);
   back.sock.close();
   console.log('✓ Test 8b Passed: Permissions set by the admin survive rejoining and restarts');

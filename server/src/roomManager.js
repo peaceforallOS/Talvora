@@ -145,10 +145,8 @@ class RoomManager {
 
     // Enforce permission restrictions on media state
     if (!user.permissions.can_audio) mediaState.audio = false;
-    if (!user.permissions.can_video) {
-      mediaState.video = false;
-      mediaState.screen = false;
-    }
+    if (!user.permissions.can_video) mediaState.video = false;
+    if (!user.permissions.can_screen) mediaState.screen = false;
 
     user.mediaState = { ...user.mediaState, ...mediaState };
 
@@ -168,12 +166,10 @@ class RoomManager {
 
     user.permissions = { ...user.permissions, ...newPermissions };
 
-    // If audio/video revoked, enforce mediaState update immediately
+    // If audio, video or screen sharing is revoked, enforce mediaState update immediately
     if (!user.permissions.can_audio) user.mediaState.audio = false;
-    if (!user.permissions.can_video) {
-      user.mediaState.video = false;
-      user.mediaState.screen = false;
-    }
+    if (!user.permissions.can_video) user.mediaState.video = false;
+    if (!user.permissions.can_screen) user.mediaState.screen = false;
 
     // Inform the user directly
     this.sendTo(userId, {

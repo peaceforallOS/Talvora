@@ -43,7 +43,7 @@ const SHARED_DIR = [
 ].find(dir => fs.existsSync(dir)) || path.join(__dirname, '../../shared');
 const MAX_WS_PAYLOAD = 256 * 1024; // chat messages and call setup (SDP, ICE) are a few KB at most
 const MAX_CHAT_LENGTH = 4000;
-const PERMISSION_KEYS = ['can_audio', 'can_video', 'can_chat', 'can_invite'];
+const PERMISSION_KEYS = ['can_audio', 'can_video', 'can_screen', 'can_chat', 'can_invite'];
 
 // HTTPS (TLS_MODE=auto, set by the installer): see certManager.js for how the certificate is chosen.
 // Without it the server only listens on this computer (development and tests): invite tokens,

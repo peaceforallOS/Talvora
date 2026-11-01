@@ -591,8 +591,8 @@
       btnToggleCam.title = 'Toggle Camera';
     }
 
-    // Screen sharing is video too
-    if (perms.can_video === false) {
+    // Screen sharing: its own permission (servers before 1.10.0 tie it to video)
+    if ((perms.can_screen ?? perms.can_video) === false) {
       if (isScreenSharing) {
         mediaEngine.stopScreenShare();
         setScreenShareUI(false);

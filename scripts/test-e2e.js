@@ -148,8 +148,8 @@ async function runE2E() {
   assert.ok(omidJoined === true, 'Omid join failed');
   assert.ok(coreOmid.currentUser.role === Role.USER, 'Omid should have regular user role');
   assert.ok(coreOmid.currentUser.permissions.can_invite === false, 'Omid should NOT have can_invite by default');
-  assert.ok(coreOmid.currentUser.permissions.can_audio === false && coreOmid.currentUser.permissions.can_video === false,
-    'Invited users should start without voice and video');
+  assert.ok(coreOmid.currentUser.permissions.can_audio === false && coreOmid.currentUser.permissions.can_video === false &&
+    coreOmid.currentUser.permissions.can_screen === false, 'Invited users should start without voice, video and screen sharing');
   assert.ok(coreAdmin.currentUser.permissions.can_audio && coreAdmin.currentUser.permissions.can_video, 'Admin should have voice and video');
   console.log('  [PASS] Omid joined successfully with regular user role and default permissions.\n');
 

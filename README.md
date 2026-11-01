@@ -7,7 +7,7 @@ Private, self-hosted video calls for Windows and Linux. You run the server; only
 - **In the call:** voice, video, screen sharing (viewable full screen), public and direct chat, and a volume control per person. Everyone joins muted with the camera off; the camera is only opened while it is on. Invited people can use voice, video and screen sharing once the admin allows it for them in the management panel (the admin always can)
 - **The admin opens the room:** invited people can only join while the admin is in the call. If the admin leaves, everyone else is removed after 10 seconds unless the admin comes back in time; the admin's app reconnects by itself after a dropped connection
 - **Light on memory:** about 65 MB on the join screen and 120-250 MB in a call (drawn without the graphics card; it can be turned on in Settings)
-- **Management panel:** live permissions (audio, video, chat, invite; invited people start without audio and video), kick and remove, network and port diagnostics
+- **Management panel:** live permissions (audio, video, screen sharing, chat, invite; invited people start without audio, video and screen sharing), kick and remove, network and port diagnostics
 - **Server calculator** (on the app's join screen): enter how many people join a call and see the CPU, RAM, port speed and traffic to rent, based on measured load tests
 - **Updates:** apps and servers notice new releases by themselves; every release is signed and checked before it is installed
 

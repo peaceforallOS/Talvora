@@ -103,17 +103,29 @@ async function runTests() {
   assert.strictEqual((await request('GET', '/api/health')).status, 200, 'Server died after malformed payloads');
   console.log('✓ Test 2 Passed: Server survives malformed authenticated payloads');
 
-  // Test 3: Invited users start without voice and video (or screen sharing); admins have everything
-  assert.deepStrictEqual(
-    { audio: omid.user.permissions.can_audio, video: omid.user.permissions.can_video },
-    { audio: false, video: false }, 'Invited users must start without voice and video');
-  assert.ok(admin.user.permissions.can_audio && admin.user.permissions.can_video, 'Admins always have voice and video');
-  omid.ws.send(JSON.stringify({ type: MessageType.MEDIA_STATE_CHANGE, mediaState: { audio: true, video: true, screen: true } }));
-  await sleep(150);
-  assert.deepStrictEqual(roomManager.getParticipant(omid.user.id).mediaState, { audio: false, video: false, screen: false },
+  // Test 3: Invited users start without voice, video and screen sharing; admins have everything
+  const media = p => ({ audio: p.can_audio, video: p.can_video, screen: p.can_screen });
+  assert.deepStrictEqual(media(omid.user.permissions), { audio: false, video: false, screen: false },
+    'Invited users must start without voice, video and screen sharing');
+  assert.deepStrictEqual(media(admin.user.permissions), { audio: true, video: true, screen: true }, 'Admins always have voice, video and screen sharing');
+  const announce = async state => {
+    omid.ws.send(JSON.stringify({ type: MessageType.MEDIA_STATE_CHANGE, mediaState: state }));
+    await sleep(150);
+    return { ...roomManager.getParticipant(omid.user.id).mediaState };
+  };
+  assert.deepStrictEqual(await announce({ audio: true, video: true, screen: true }), { audio: false, video: false, screen: false },
     'Voice, video and screen sharing must stay off without permission');
+  // Video and screen sharing are separate: either one alone
   roomManager.updatePermissions(omid.user.id, { can_audio: true, can_video: true });
-  console.log('✓ Test 3a Passed: Invited users need the admin to turn on voice and video');
+  assert.deepStrictEqual(await announce({ video: true, screen: true }), { audio: false, video: true, screen: false },
+    'Video must not allow screen sharing');
+  roomManager.updatePermissions(omid.user.id, { can_video: false, can_screen: true });
+  assert.deepStrictEqual(await announce({ video: true, screen: true }), { audio: false, video: false, screen: true },
+    'Screen sharing must not need video');
+  roomManager.updatePermissions(omid.user.id, { can_screen: false });
+  assert.strictEqual(roomManager.getParticipant(omid.user.id).mediaState.screen, false, 'Revoking screen sharing must stop it');
+  roomManager.updatePermissions(omid.user.id, { can_video: true });
+  console.log('✓ Test 3a Passed: Voice, video and screen sharing are turned on separately by the admin');
 
   // Test 3: Media state only accepts known boolean keys
   omid.ws.send(JSON.stringify({ type: MessageType.MEDIA_STATE_CHANGE, mediaState: { audio: true, video: 'yes', evil: 1 } }));

@@ -179,19 +179,23 @@ Each user entity in the room state contains a `permissions` object (an invited u
 {
   "can_audio": false,
   "can_video": false,
+  "can_screen": false,
   "can_chat": true,
   "can_invite": false
 }
 ```
 
 - **Admin**: always every permission; the panel cannot change an admin's permissions (`403`), and saved changes never apply to admins.
-- **Invited user default**: no voice, no video (which includes screen sharing), no inviting; chat on. The admin turns
-  them on per user in the management panel; the choice is kept for that username across rejoins and restarts.
+- **Invited user default**: no voice, no video, no screen sharing, no inviting; chat on. The admin turns each on
+  separately per user in the management panel; the choice is kept for that username across rejoins and restarts.
+  (Before 1.10.0 the Video switch also allowed screen sharing: saved settings with video on keep screen sharing on.
+  Apps on a server without `can_screen` follow `can_video` for screen sharing.)
 - **Admin Panel Control**: The admin can grant or revoke any permission live.
-- Being allowed never turns anything on: the microphone and camera stay off until the user clicks Unmute / Start Video.
+- Being allowed never turns anything on: the microphone, camera and screen share stay off until the user clicks
+  Unmute / Start Video / Share Screen.
 - When `can_audio` is `false`, the server keeps the user's announced audio off and the client mutes its input.
-- When `can_video` is `false`, the server keeps the announced video and screen sharing off and the client closes the
-  camera and stops any screen share.
+- When `can_video` is `false`, the server keeps the announced video off and the client closes the camera.
+- When `can_screen` is `false`, the server keeps the announced screen sharing off and the client stops any screen share.
 - When `can_chat` is set to `false`, client disables the chat input box with a clear banner.
 - When `can_invite` is set to `true` by Admin, the user's client automatically reveals the "Invite" button.
 

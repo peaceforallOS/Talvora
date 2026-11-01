@@ -39,12 +39,13 @@ const Role = {
   USER: 'user'
 };
 
-// Default Permissions: invited users start without voice and video (and screen sharing) until the
-// admin turns them on in the management panel; admins always have everything
+// Default Permissions: invited users start without voice, video and screen sharing until the admin
+// turns them on in the management panel (each on its own); admins always have everything
 function createDefaultPermissions(isAdmin = false) {
   return {
     can_audio: !!isAdmin,
     can_video: !!isAdmin,
+    can_screen: !!isAdmin,
     can_chat: true,
     can_invite: !!isAdmin // By default, only admin can invite
   };

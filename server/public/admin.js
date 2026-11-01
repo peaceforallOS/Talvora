@@ -331,7 +331,7 @@
     const filtered = participants.filter(u => u.username.toLowerCase().includes(filter));
 
     if (filtered.length === 0) {
-      usersTbody.innerHTML = `<tr><td colspan="7" class="empty-state">${
+      usersTbody.innerHTML = `<tr><td colspan="8" class="empty-state">${
         participants.length === 0
           ? `${iconSvg('users')}No one is in the room right now.`
           : `${iconSvg('search')}No users match your search.`
@@ -367,6 +367,7 @@
         </td>
         <td class="td-perm">${createSwitch(user.id, 'can_audio', user.permissions.can_audio, isAdmin)}</td>
         <td class="td-perm">${createSwitch(user.id, 'can_video', user.permissions.can_video, isAdmin)}</td>
+        <td class="td-perm">${createSwitch(user.id, 'can_screen', user.permissions.can_screen, isAdmin)}</td>
         <td class="td-perm">${createSwitch(user.id, 'can_chat', user.permissions.can_chat, isAdmin)}</td>
         <td class="td-perm">${createSwitch(user.id, 'can_invite', user.permissions.can_invite, isAdmin)}</td>
         <td class="td-actions">
@@ -401,7 +402,7 @@
           const res = await adminPost('/api/admin/permissions', { userId, permissions: newPermissions });
 
           if (res.ok) {
-            const permLabels = { can_audio: 'Audio', can_video: 'Video', can_chat: 'Chat', can_invite: 'Inviting' };
+            const permLabels = { can_audio: 'Audio', can_video: 'Video', can_screen: 'Screen sharing', can_chat: 'Chat', can_invite: 'Inviting' };
             showToast(`${permLabels[permKey] || permKey} turned ${value ? 'on' : 'off'} for ${user.username}`);
             user.permissions[permKey] = value;
             lastSnapshot = null;
