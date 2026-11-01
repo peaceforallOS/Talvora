@@ -265,8 +265,10 @@ if [ "${TLS_MODE}" = "auto" ] && [ -n "${DOMAIN}" ] && command -v getent >/dev/n
 fi
 
 # 5. Create Service Launcher Script
+# Written next to the old one and moved over it: a launcher that is running (see its restart loop)
+# keeps reading its own copy, which would break if the file were rewritten in place
 LAUNCHER="${INSTALL_DIR}/start-server.sh"
-cat > "${LAUNCHER}" << 'EOF'
+cat > "${LAUNCHER}.new" << 'EOF'
 #!/bin/bash
 # Resolve symlinks: this script is usually invoked through the videocall-server link
 DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
@@ -295,9 +297,22 @@ if [ "$1" = "reset-password" ]; then
 fi
 export PORT="${PORT:-8080}"
 export HOST="${HOST:-0.0.0.0}"
-exec node src/index.js
+# The system service: systemd restarts it (the installer does after an update)
+if [ -n "${INVOCATION_ID}" ]; then
+  exec node src/index.js
+fi
+# Started by hand: after an update the server exits with 75 and the new version starts here
+export VIDEOCALL_RESTART_ON_UPDATE=1
+while true; do
+  node src/index.js
+  code=$?
+  [ "${code}" -eq 75 ] || exit "${code}"
+  echo "Starting the updated Talvora server..."
+  cd "$DIR"
+done
 EOF
-chmod +x "${LAUNCHER}"
+chmod +x "${LAUNCHER}.new"
+mv -f "${LAUNCHER}.new" "${LAUNCHER}"
 
 # Create convenient symlink in /usr/local/bin or ~/.local/bin
 BIN_DIR="/usr/local/bin"
@@ -337,8 +352,67 @@ if [ "$EUID" -eq 0 ]; then
   fi
 fi
 
-# 7. Systemd service configuration if running as root
-if [ "$EUID" -eq 0 ] && command -v systemctl >/dev/null 2>&1; then
+# Restarting after an update: the version just installed, and the one the server says it runs
+NEW_VERSION="$(node -p "require('./package.json').version")"
+RUNNING_INFO="${INSTALL_DIR}/data/running.json"
+
+# Talvora servers running from this folder (by their working folder and command line)
+running_server_pids() {
+  local p
+  for p in /proc/[0-9]*; do
+    [ "$(readlink "${p}/cwd" 2>/dev/null)" = "${INSTALL_DIR}" ] || continue
+    tr '\0' ' ' < "${p}/cmdline" 2>/dev/null | grep -q 'src/index\.js' || continue
+    echo "${p#/proc/}"
+  done
+}
+
+stop_server() {
+  kill -TERM "$1" 2>/dev/null || return 0
+  for _ in $(seq 1 20); do
+    kill -0 "$1" 2>/dev/null || return 0
+    sleep 0.5
+  done
+}
+
+wait_for_new_version() {
+  local version
+  for _ in $(seq 1 "$1"); do
+    version="$(node -e "console.log(JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')).version)" "${RUNNING_INFO}" 2>/dev/null || true)"
+    [ "${version}" = "${NEW_VERSION}" ] && return 0
+    sleep 1
+  done
+  return 1
+}
+
+# Servers started by hand get the new version too. One started by this launcher restarts in place,
+# in its own terminal. One started by an older launcher cannot: it is stopped and started again in
+# the background, with its output in server.log.
+RESTARTED=""; BACKGROUND_LOG=""
+restart_manual_servers() {
+  local pid owner
+  for pid in $(running_server_pids); do
+    rm -f "${RUNNING_INFO}"
+    RESTARTED=1
+    if tr '\0' '\n' < "/proc/${pid}/environ" 2>/dev/null | grep -qx 'VIDEOCALL_RESTART_ON_UPDATE=1'; then
+      kill -USR2 "${pid}" 2>/dev/null || true
+      continue
+    fi
+    owner="$(stat -c %U "/proc/${pid}" 2>/dev/null)" || continue
+    stop_server "${pid}"
+    BACKGROUND_LOG="${INSTALL_DIR}/server.log"
+    touch "${BACKGROUND_LOG}"
+    chown "${owner}" "${BACKGROUND_LOG}" 2>/dev/null || true
+    if [ "$(id -un)" = "${owner}" ]; then
+      (cd "${INSTALL_DIR}" && setsid nohup "${LAUNCHER}" >> "${BACKGROUND_LOG}" 2>&1 < /dev/null &)
+    else
+      (cd "${INSTALL_DIR}" && runuser -u "${owner}" -- setsid nohup "${LAUNCHER}" >> "${BACKGROUND_LOG}" 2>&1 < /dev/null &)
+    fi
+  done
+}
+
+# 7. Systemd service configuration if running as root (and systemd runs this machine: containers
+# and WSL often have the systemctl command without it)
+if [ "$EUID" -eq 0 ] && command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
   # The server runs as its own unprivileged user; it only gets the right to use ports 80 and 443
   if ! id -u videocall >/dev/null 2>&1; then
     useradd --system --no-create-home --home-dir "${INSTALL_DIR}" --shell "$(command -v nologin || echo /bin/false)" videocall
@@ -377,7 +451,15 @@ EOF
 
   systemctl daemon-reload
   systemctl enable videocall-server
-  rm -f "${INSTALL_DIR}/data/connection-info.json"
+  # A server started by hand from this folder would keep the ports (and the old version)
+  SERVICE_PID="$(systemctl show -p MainPID --value videocall-server 2>/dev/null || echo 0)"
+  for pid in $(running_server_pids); do
+    if [ "${pid}" != "${SERVICE_PID}" ]; then
+      stop_server "${pid}"
+      echo -e "${YELLOW}Stopped a Talvora server that was started by hand; the service runs it from now on.${NC}"
+    fi
+  done
+  rm -f "${INSTALL_DIR}/data/connection-info.json" "${RUNNING_INFO}"
   systemctl restart videocall-server
   echo -e "${GREEN}✓ Systemd service 'videocall-server' enabled and started.${NC}"
   echo "Waiting for the server to obtain its HTTPS certificate (up to 2 minutes)..."
@@ -385,9 +467,29 @@ EOF
     [ -f "${INSTALL_DIR}/data/connection-info.json" ] && break
     sleep 1
   done
+  if wait_for_new_version 30; then
+    echo -e "${GREEN}✓ Talvora server ${NEW_VERSION} is running.${NC}"
+  else
+    echo -e "${YELLOW}The service has not started version ${NEW_VERSION} yet. Check: journalctl -u videocall-server${NC}"
+  fi
 else
-  # User mode launcher
+  # User mode launcher (no systemd service): restart a server that is already running
   echo -e "${GREEN}✓ Installed launcher binary to ${BIN_DIR}/videocall-server${NC}"
+  restart_manual_servers
+  if [ -n "${RESTARTED}" ]; then
+    echo "Restarting the running server with the new version (up to 2 minutes)..."
+    if wait_for_new_version 150; then
+      echo -e "${GREEN}✓ Talvora server ${NEW_VERSION} is running (restarted automatically).${NC}"
+      if [ -n "${BACKGROUND_LOG}" ]; then
+        NEW_PID="$(node -e "console.log(JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')).pid)" "${RUNNING_INFO}" 2>/dev/null || true)"
+        echo -e "${YELLOW}  It was started by an older version, so it now runs in the background.${NC}"
+        echo -e "${YELLOW}  Its output: ${BACKGROUND_LOG}    Stop it with: kill ${NEW_PID}${NC}"
+        echo -e "${YELLOW}  Started by hand from now on, it restarts by itself after each update.${NC}"
+      fi
+    else
+      echo -e "${YELLOW}The running server has not restarted with version ${NEW_VERSION}. Stop it and start it again: videocall-server${NC}"
+    fi
+  fi
 fi
 
 echo -e "\n${GREEN}${BOLD}"

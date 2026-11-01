@@ -716,6 +716,15 @@ function writeConnectionInfo() {
   return creds;
 }
 
+// Which version is serving, and as which process: the installer waits for it after an update
+function writeRunningInfo() {
+  try {
+    fs.writeFileSync(path.join(DATA_DIR, 'running.json'), JSON.stringify({ version: CURRENT_VERSION, pid: process.pid, startedAt: new Date().toISOString() }));
+  } catch (err) {
+    console.warn(`Could not write running.json: ${err.message}`);
+  }
+}
+
 async function start() {
   const network = await portAccess.start();
 
@@ -751,6 +760,7 @@ async function start() {
     turnRelay.start();
     if (RELEASE_CHECK) releaseWatcher.start();
     const creds = writeConnectionInfo();
+    writeRunningInfo();
     const certificate = certManager?.current
       ? `${certManager.current.issuedBy === 'acme' ? "Let's Encrypt" : "server's own CA"} (${certManager.mode}), valid until ${new Date(certManager.current.notAfter).toISOString()}, auto-renewed`
       : LOCAL_ONLY ? 'off (plain HTTP, reachable from this computer only)' : 'off (plain HTTP: NOT ENCRYPTED, ALLOW_INSECURE_HTTP=1)';
@@ -790,6 +800,19 @@ for (const signal of ['SIGTERM', 'SIGINT']) {
     setTimeout(() => process.exit(0), 5000).unref();
   });
 }
+
+// Started by hand (videocall-server): after an update the installer sends SIGUSR2, and exit code 75
+// tells the launcher to start the newly installed version in the same terminal. The system service
+// is restarted by systemd instead.
+const RESTART_FOR_UPDATE = 75;
+if (process.env.VIDEOCALL_RESTART_ON_UPDATE === '1') {
+  process.once('SIGUSR2', () => {
+    console.log('\nA new version of Talvora server was installed: restarting...');
+    portAccess.stop().finally(() => process.exit(RESTART_FOR_UPDATE));
+    setTimeout(() => process.exit(RESTART_FOR_UPDATE), 5000).unref();
+  });
+}
+
 start().catch(err => {
   console.error('Server failed to start:', err);
   process.exit(1);

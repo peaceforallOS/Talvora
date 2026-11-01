@@ -277,7 +277,13 @@ address and answers 403 once a shared address (an office, a cloud provider) has 
   elsewhere). A newer signed server package appears as a banner in the management panel and once in the log, with
   the command `sudo videocall-server update`. That command downloads `videocall-server.tar.gz`, checks it against the
   signed manifest, unpacks it and runs its `install-server.sh`, which keeps settings, data and certificates and
-  restarts the service. The server never replaces itself unattended (it runs as an unprivileged user).
+  restarts the server, then waits until `data/running.json` (written by the server once it listens) shows the new
+  version and says so. The system service is restarted with systemd (only where systemd runs the machine; a server
+  started by hand from the same folder, which would hold the ports, is stopped first). A server started by hand with
+  `videocall-server` runs under the launcher's restart loop: the installer sends it SIGUSR2, it exits with code 75
+  and the launcher starts the new version in the same terminal. One started by an older launcher (no loop) is
+  stopped and started again in the background, logging to `server.log`. The server never replaces itself
+  unattended (it runs as an unprivileged user).
 
 ## 6. Directory Structure
 ```

@@ -42,6 +42,8 @@ The installer sets up Node.js if needed, HTTPS, the firewall, router port forwar
 sudo videocall-server update
 ```
 
+It keeps your settings, data and certificates and restarts the server on the new version by itself, whether it runs as the system service or was started by hand with `videocall-server`; it ends by confirming which version is running.
+
 ## For developers
 
 Only needed if you want to change Talvora itself:
