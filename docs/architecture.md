@@ -316,7 +316,11 @@ address and answers 403 once a shared address (an office, a cloud provider) has 
   in `data/admin-sessions.json` (SHA-256 of the cookie only) so the restart does not sign the admin out. The command
   downloads `videocall-server.tar.gz`, checks it against the
   signed manifest, unpacks it and runs its `install-server.sh`, which keeps settings, data and certificates and
-  restarts the server, then waits until `data/running.json` (written by the server once it listens) shows the new
+  restarts the server. The package carries the server's production dependencies (pure JavaScript, about 2 MB packed;
+  `package-deliverables.sh` refuses compiled ones), so installing and updating never need the npm registry. The
+  installer assembles the new version, dependencies included, in a staging folder next to the install (not inside it:
+  Node would find the installed version's packages in a parent folder), checks the dependencies load, and only then
+  swaps it in; any failure leaves the installed version and the running server untouched and says why. It then waits until `data/running.json` (written by the server once it listens) shows the new
   version and says so. The system service is restarted with systemd (only where systemd runs the machine; a server
   started by hand from the same folder, which would hold the ports, is stopped first). A server started by hand with
   `videocall-server` runs under the launcher's restart loop: the installer sends it SIGUSR2, it exits with code 75

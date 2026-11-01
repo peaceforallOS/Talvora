@@ -154,13 +154,19 @@ fi
 if want server; then
 # --- 3. Package Linux Server Installer ---
 echo ">> Packaging Deliverable 3: Linux Server Installer..."
-# The installer needs the server, shared protocol and web client next to it.
-# data/ (server secret) and node_modules/ are deliberately left out.
+# The installer needs the server, shared protocol and web client next to it, and gets the
+# production dependencies (pure JavaScript) too, so installing and updating need no npm registry.
+# data/ (server secret) is deliberately left out.
 SERVER_BUNDLE="${DIST_DIR}/server"
+rm -rf "${SERVER_BUNDLE}"
 mkdir -p "${SERVER_BUNDLE}/server" "${SERVER_BUNDLE}/client"
 cp "${PROJECT_ROOT}/server/install-server.sh" "${SERVER_BUNDLE}/"
 cp -r "${PROJECT_ROOT}/server/src" "${PROJECT_ROOT}/server/public" "${PROJECT_ROOT}/server/stubs" \
   "${PROJECT_ROOT}/server/package.json" "${PROJECT_ROOT}/server/package-lock.json" "${SERVER_BUNDLE}/server/"
+(cd "${SERVER_BUNDLE}/server" && npm ci --omit=dev --no-audit --no-fund --silent) || { echo "Server dependencies could not be installed"; exit 1; }
+if find "${SERVER_BUNDLE}/server/node_modules" -name '*.node' | grep -q .; then
+  echo "A server dependency contains compiled code; it cannot be shipped for every Linux"; exit 1
+fi
 cp -r "${PROJECT_ROOT}/shared" "${SERVER_BUNDLE}/"
 cp -r "${PROJECT_ROOT}/client/src" "${SERVER_BUNDLE}/client/"
 chmod +x "${SERVER_BUNDLE}/install-server.sh"

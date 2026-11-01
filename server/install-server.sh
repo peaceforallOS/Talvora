@@ -157,34 +157,60 @@ fi
 
 echo -e "\n${YELLOW}>> Deploying server files to ${INSTALL_DIR}...${NC}"
 mkdir -p "${INSTALL_DIR}"
-# Never copy data/ (it holds this machine's server secret and would overwrite an existing
-# install's config) or node_modules/ (dependencies are installed fresh below)
-for item in src public stubs package.json package-lock.json; do
+# The new version is assembled in a staging folder first, dependencies included, and only then
+# swapped in: if anything fails, the installed version stays exactly as it was. Never touches
+# data/ (this machine's server secret, config and certificates) or server.env. The staging folder
+# sits next to the install, not in it: Node looks for missing packages in parent folders and would
+# otherwise find the installed version's and miss a broken package.
+STAGE="$(mktemp -d "${INSTALL_DIR}.install.XXXXXX")"
+trap 'rm -rf "${STAGE}"' EXIT
+for item in src public stubs package.json package-lock.json node_modules; do
   if [ -e "${SERVER_SRC}/${item}" ]; then
-    rm -rf "${INSTALL_DIR:?}/${item}"
-    cp -r "${SERVER_SRC}/${item}" "${INSTALL_DIR}/"
+    cp -R "${SERVER_SRC}/${item}" "${STAGE}/"
   fi
 done
-rm -rf "${INSTALL_DIR}/shared"
-cp -r "${SHARED_SRC}" "${INSTALL_DIR}/shared"
+cp -R "${SHARED_SRC}" "${STAGE}/shared"
 if [ -n "${CLIENT_SRC}" ]; then
   # Served at /join so invitees can use the call from a browser
-  rm -rf "${INSTALL_DIR}/client"
-  mkdir -p "${INSTALL_DIR}/client"
-  cp -r "${CLIENT_SRC}" "${INSTALL_DIR}/client/src"
+  mkdir -p "${STAGE}/client"
+  cp -R "${CLIENT_SRC}" "${STAGE}/client/src"
 else
   echo -e "${YELLOW}Warning: web client files not found; browser join links (/join) will not work.${NC}"
 fi
 
-cd "${INSTALL_DIR}"
-
-# 3. Install npm dependencies
-if ! command -v npm >/dev/null 2>&1; then
-  echo -e "${RED}npm is required to install server dependencies.${NC}"
+# 3. Dependencies: the release package carries them (pure JavaScript), so installing and updating
+# need no access to the npm registry; installing from a source checkout downloads them
+if [ -d "${STAGE}/node_modules" ]; then
+  echo -e "${GREEN}✓ Dependencies included in the package${NC}"
+else
+  if ! command -v npm >/dev/null 2>&1; then
+    echo -e "${RED}npm is required to install server dependencies.${NC}"
+    exit 1
+  fi
+  echo "Installing required dependencies..."
+  if ! (cd "${STAGE}" && npm install --omit=dev --no-audit --no-fund > "${STAGE}/npm.log" 2>&1); then
+    echo -e "${RED}Installing the dependencies failed; nothing was changed. npm said:${NC}"
+    tail -n 15 "${STAGE}/npm.log"
+    exit 1
+  fi
+  rm -f "${STAGE}/npm.log"
+fi
+if ! (cd "${STAGE}" && node -e "require('ws'); require('acme-client'); require('node-forge'); require('node-turn')") ; then
+  echo -e "${RED}The new version's dependencies do not load; nothing was changed.${NC}"
   exit 1
 fi
-echo "Installing required dependencies..."
-npm install --omit=dev --no-audit --no-fund --silent
+
+# Swap the new version in, item by item (the running server keeps its loaded code until it restarts)
+for item in src public stubs package.json package-lock.json node_modules shared client; do
+  rm -rf "${INSTALL_DIR:?}/${item}"
+  if [ -e "${STAGE}/${item}" ]; then
+    mv "${STAGE}/${item}" "${INSTALL_DIR}/${item}"
+  fi
+done
+rm -rf "${STAGE}"
+trap - EXIT
+
+cd "${INSTALL_DIR}"
 
 # 4. HTTPS settings (kept in server.env, read by the service and the launcher)
 echo -e "\n${YELLOW}>> Configuring HTTPS...${NC}"
