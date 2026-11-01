@@ -72,6 +72,7 @@
   let isMicMuted = true;
   let isCamOff = true;
   let cameraStarting = false;
+  let micStarting = false;
   let isScreenSharing = false;
   let callTimerInterval = null;
 
@@ -509,9 +510,10 @@
     applyPermissionsToUI(user.permissions);
     updateParticipantsUI();
 
-    // Open the microphone (muted, so unmuting is instant); the camera opens only when turned on
+    // Open the microphone (muted, so unmuting is instant) only with voice permission; otherwise it
+    // opens on the first unmute once the admin allows it. The camera opens only when turned on.
     try {
-      const stream = await mediaEngine.initLocalMedia({ audio: true });
+      const stream = await mediaEngine.initLocalMedia({ audio: user.permissions?.can_audio !== false });
       if (!stream || !clientCore.currentUser) return; // left or got disconnected while waiting for devices
       localVideo.srcObject = stream;
 
@@ -550,6 +552,22 @@
       btnToggleCam.classList.remove('disabled');
       btnToggleCam.disabled = false;
       btnToggleCam.title = 'Toggle Camera';
+    }
+
+    // Screen sharing is video too
+    if (perms.can_video === false) {
+      if (isScreenSharing) {
+        mediaEngine.stopScreenShare();
+        setScreenShareUI(false);
+        clientCore.sendMediaState({ screen: false });
+      }
+      btnShareScreen.classList.add('disabled');
+      btnShareScreen.disabled = true;
+      btnShareScreen.title = 'Screen sharing disabled by room administrator';
+    } else {
+      btnShareScreen.classList.remove('disabled');
+      btnShareScreen.disabled = false;
+      btnShareScreen.title = 'Share screen';
     }
 
     // Invite permission: visible if admin or granted
@@ -728,10 +746,33 @@
   }
 
   btnToggleMic.addEventListener('click', () => {
-    if (btnToggleMic.disabled) return;
+    if (btnToggleMic.disabled || micStarting) return;
+    // Joined without voice permission: the microphone opens on the first unmute
+    if (isMicMuted && !mediaEngine.localStream?.getAudioTracks().length) {
+      turnMicOn();
+      return;
+    }
     setMicMutedUI(!isMicMuted);
     clientCore.sendMediaState({ audio: !isMicMuted });
   });
+
+  async function turnMicOn() {
+    micStarting = true;
+    btnToggleMic.classList.add('is-busy');
+    try {
+      const track = await mediaEngine.startMicrophone();
+      // Left the room, or voice was taken away, while the microphone was opening
+      if (!track || !clientCore.currentUser || btnToggleMic.disabled) return;
+      setMicMutedUI(false);
+      clientCore.sendMediaState({ audio: true });
+    } catch (e) {
+      console.warn('Microphone unavailable:', e);
+      showToast(`The microphone could not be started: ${e.message || e.name}`);
+    } finally {
+      micStarting = false;
+      btnToggleMic.classList.remove('is-busy');
+    }
+  }
 
   async function turnCameraOn() {
     cameraStarting = true;
@@ -767,8 +808,12 @@
 
   btnShareScreen.addEventListener('click', async () => {
     if (!isScreenSharing) {
+      if (btnShareScreen.disabled) return;
       const stream = await mediaEngine.startScreenShare();
-      if (stream) {
+      // Video was taken away while the picker was open
+      if (stream && btnShareScreen.disabled) {
+        mediaEngine.stopScreenShare();
+      } else if (stream) {
         setScreenShareUI(true);
         clientCore.sendMediaState({ screen: true });
       }

@@ -342,8 +342,8 @@ class AuthService {
     if (payload.canInvite) {
       permissions.can_invite = true;
     }
-    // Changes the admin made win over the defaults and the link's own invite flag
-    Object.assign(permissions, this.permissionOverrides[String(payload.username).trim().toLowerCase()]);
+    // Changes the admin made win over the defaults and the link's own invite flag (admins keep everything)
+    if (!isAdmin) Object.assign(permissions, this.permissionOverrides[String(payload.username).trim().toLowerCase()]);
 
     return {
       success: true,

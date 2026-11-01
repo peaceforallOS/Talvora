@@ -162,29 +162,34 @@ indicator uses the cleaned signal: RMS above -50 dBFS, held for 400 ms between w
 
 ## 4. Permission Model & Management Schema
 
-Each user entity in the room state contains a `permissions` object:
+Each user entity in the room state contains a `permissions` object (an invited user's defaults):
 ```json
 {
-  "can_audio": true,
-  "can_video": true,
+  "can_audio": false,
+  "can_video": false,
   "can_chat": true,
   "can_invite": false
 }
 ```
 
-- **Admin default**: All permissions `true`.
-- **Regular user default**: `can_invite` is `false`, all media/chat permissions `true` unless revoked.
-- **Admin Panel Control**: The admin can revoke or restore any permission live.
-- When `can_audio` is set to `false`, server cuts the user's incoming audio relay and notifies client to mute input.
-- When `can_video` is set to `false`, server cuts the video relay and notifies client to turn off camera.
+- **Admin**: always every permission; the panel cannot change an admin's permissions (`403`), and saved changes never apply to admins.
+- **Invited user default**: no voice, no video (which includes screen sharing), no inviting; chat on. The admin turns
+  them on per user in the management panel; the choice is kept for that username across rejoins and restarts.
+- **Admin Panel Control**: The admin can grant or revoke any permission live.
+- Being allowed never turns anything on: the microphone and camera stay off until the user clicks Unmute / Start Video.
+- When `can_audio` is `false`, the server keeps the user's announced audio off and the client mutes its input.
+- When `can_video` is `false`, the server keeps the announced video and screen sharing off and the client closes the
+  camera and stops any screen share.
 - When `can_chat` is set to `false`, client disables the chat input box with a clear banner.
 - When `can_invite` is set to `true` by Admin, the user's client automatically reveals the "Invite" button.
 
 ---
 
 ## 5. Devices and Volume (Client)
-- Everyone joins muted with the camera off. The microphone is opened on join (muted), so unmuting is instant and the
-  settings' input meter works. The camera is opened only while it is on (`MediaEngine.startCamera` / `stopCamera`):
+- Everyone joins muted with the camera off. With voice permission the microphone is opened on join (muted), so
+  unmuting is instant and the settings' input meter works; without it nothing is opened, and the first Unmute after
+  the admin allows voice opens it (`MediaEngine.startMicrophone`, one negotiation). Peers' speaking detection runs
+  either way (`ensureAudioContext`). The camera is opened only while it is on (`MediaEngine.startCamera` / `stopCamera`):
   off releases the device and its capture, encoding and preview memory. Each connection keeps one video sender
   (`videoSenders`); the first video adds it (one negotiation), after that camera on/off and screen sharing only call
   `replaceTrack` (a track, or `null` for nothing). Peers show the avatar from the announced media state, so a sender

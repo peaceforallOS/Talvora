@@ -103,6 +103,18 @@ async function runTests() {
   assert.strictEqual((await request('GET', '/api/health')).status, 200, 'Server died after malformed payloads');
   console.log('✓ Test 2 Passed: Server survives malformed authenticated payloads');
 
+  // Test 3: Invited users start without voice and video (or screen sharing); admins have everything
+  assert.deepStrictEqual(
+    { audio: omid.user.permissions.can_audio, video: omid.user.permissions.can_video },
+    { audio: false, video: false }, 'Invited users must start without voice and video');
+  assert.ok(admin.user.permissions.can_audio && admin.user.permissions.can_video, 'Admins always have voice and video');
+  omid.ws.send(JSON.stringify({ type: MessageType.MEDIA_STATE_CHANGE, mediaState: { audio: true, video: true, screen: true } }));
+  await sleep(150);
+  assert.deepStrictEqual(roomManager.getParticipant(omid.user.id).mediaState, { audio: false, video: false, screen: false },
+    'Voice, video and screen sharing must stay off without permission');
+  roomManager.updatePermissions(omid.user.id, { can_audio: true, can_video: true });
+  console.log('✓ Test 3a Passed: Invited users need the admin to turn on voice and video');
+
   // Test 3: Media state only accepts known boolean keys
   omid.ws.send(JSON.stringify({ type: MessageType.MEDIA_STATE_CHANGE, mediaState: { audio: true, video: 'yes', evil: 1 } }));
   await sleep(150);
@@ -159,13 +171,17 @@ async function runTests() {
   // Test 9: Admin permission API ignores unknown keys and non-boolean values
   const permRes = await request('POST', '/api/admin/permissions', {
     userId: reza.user.id,
-    permissions: { can_chat: false, can_video: 'no', role: 'admin' }
+    permissions: { can_chat: false, can_video: 'yes', role: 'admin' }
   });
   assert.strictEqual(permRes.status, 200, 'Permission update failed');
   const rezaUser = roomManager.getParticipant(reza.user.id);
   assert.strictEqual(rezaUser.permissions.can_chat, false, 'Valid permission not applied');
-  assert.strictEqual(rezaUser.permissions.can_video, true, 'Non-boolean permission applied');
+  assert.strictEqual(rezaUser.permissions.can_video, false, 'Non-boolean permission applied');
   assert.ok(!('role' in rezaUser.permissions), 'Unknown permission key stored');
+  // An admin's own permissions cannot be taken away
+  const adminRes = await request('POST', '/api/admin/permissions', { userId: admin.user.id, permissions: { can_audio: false } });
+  assert.strictEqual(adminRes.status, 403, 'Admin permissions must not be changeable');
+  assert.strictEqual(roomManager.getParticipant(admin.user.id).permissions.can_audio, true, 'Admin lost voice');
   console.log('✓ Test 9 Passed: Admin permission updates sanitized');
 
   // Test 10: Static file serving cannot escape its directories

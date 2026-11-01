@@ -4,9 +4,9 @@ Private, self-hosted video calls for Windows and Linux. You run the server; only
 
 - **Encrypted:** HTTPS/WSS for everything between app and server (Let's Encrypt or the server's own pinned CA), WebRTC (DTLS-SRTP) for audio and video
 - **Personal invite links:** each link only works for the name it was made for; links can be revoked
-- **In the call:** voice, video, screen sharing (viewable full screen), public / direct / group chat, and a volume control per person. Everyone joins muted with the camera off; the camera is only opened while it is on
+- **In the call:** voice, video, screen sharing (viewable full screen), public / direct / group chat, and a volume control per person. Everyone joins muted with the camera off; the camera is only opened while it is on. Invited people can use voice, video and screen sharing once the admin allows it for them in the management panel (the admin always can)
 - **Light on memory:** about 65 MB on the join screen and 120-250 MB in a call (drawn without the graphics card; it can be turned on in Settings)
-- **Management panel:** live permissions (audio, video, chat, invite), kick and remove, network and port diagnostics
+- **Management panel:** live permissions (audio, video, chat, invite; invited people start without audio and video), kick and remove, network and port diagnostics
 - **Server calculator** (on the app's join screen): enter how many people join a call and see the CPU, RAM, port speed and traffic to rent, based on measured load tests
 - **Updates:** apps and servers notice new releases by themselves; every release is signed and checked before it is installed
 

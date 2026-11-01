@@ -62,6 +62,8 @@ class MediaEngine {
     this.negotiation = new Map(); // peerId -> { polite, makingOffer, ignoreOffer, queue }
     this.remoteStreams = new Map(); // peerId -> MediaStream aggregating that peer's tracks
     this.audioContext = null;
+    this.audioContextReady = null; // resolves the audioContext once it runs (see ensureAudioContext)
+    this.micStarting = null; // pending startMicrophone()
     this.rawAudioTrack = null; // microphone track before noise suppression
     this.micSource = null; // its node in the processing graph, replaced when the microphone changes
     this.micInput = null; // first processing node (the high-pass filter)
@@ -85,8 +87,9 @@ class MediaEngine {
   }
 
   /**
-   * Open the microphone (and the camera, if asked) when joining. The camera is usually opened
-   * later with startCamera(), only once the user turns it on.
+   * Open the microphone (and the camera, if asked) when joining. Without voice permission nothing
+   * is opened (audio: false): the microphone opens with startMicrophone() once the user may speak
+   * and unmutes. The camera is usually opened later with startCamera(), only once it is turned on.
    */
   async initLocalMedia({ audio = true, video = false } = {}) {
     // destroy() bumps the generation; a capture that resolves afterwards is discarded
@@ -94,19 +97,23 @@ class MediaEngine {
     let stream;
     // The devices chosen earlier, if still connected (ideal: falls back to the default otherwise)
     const preferred = kind => (this.preferredDevices[kind] ? { deviceId: { ideal: this.preferredDevices[kind] } } : {});
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: audio ? { ...AUDIO_CONSTRAINTS, ...preferred('audioinput') } : false,
-        video: video ? { ...VIDEO_CONSTRAINTS, ...preferred('videoinput') } : false
-      });
-    } catch (err) {
-      console.warn('getUserMedia failed, trying audio only fallback:', err);
+    if (!audio && !video) {
+      stream = new MediaStream();
+    } else {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      } catch (audioErr) {
-        console.warn('Microphone access also failed or unavailable:', audioErr);
-        // Create an empty dummy MediaStream so app functions without crashing on headless systems
-        stream = new MediaStream();
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: audio ? { ...AUDIO_CONSTRAINTS, ...preferred('audioinput') } : false,
+          video: video ? { ...VIDEO_CONSTRAINTS, ...preferred('videoinput') } : false
+        });
+      } catch (err) {
+        console.warn('getUserMedia failed, trying audio only fallback:', err);
+        try {
+          stream = audio ? await navigator.mediaDevices.getUserMedia({ audio: true, video: false }) : new MediaStream();
+        } catch (audioErr) {
+          console.warn('Microphone access also failed or unavailable:', audioErr);
+          // Create an empty dummy MediaStream so app functions without crashing on headless systems
+          stream = new MediaStream();
+        }
       }
     }
 
@@ -114,7 +121,9 @@ class MediaEngine {
       stream.getTracks().forEach(t => t.stop());
       return null;
     }
-    await this.setupAudioProcessing(stream, generation);
+    // Without a microphone, still analyse peers' audio to show who is speaking
+    if (stream.getAudioTracks().length) await this.setupAudioProcessing(stream, generation);
+    else await this.ensureAudioContext(generation);
     if (generation !== this.generation) {
       stream.getTracks().forEach(t => t.stop());
       return null;
@@ -161,21 +170,10 @@ class MediaEngine {
    * voice activity detection. If processing is unavailable the raw (browser-denoised) track is kept.
    */
   async setupAudioProcessing(stream, generation) {
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
     const rawTrack = stream.getAudioTracks()[0];
-    if (!AudioCtx || !rawTrack) return;
-
-    let ctx;
-    try {
-      ctx = new AudioCtx({ sampleRate: AUDIO_SAMPLE_RATE, latencyHint: 'interactive' });
-      // A suspended context would send silence; give up on processing if it will not run
-      await Promise.race([ctx.resume(), new Promise(resolve => setTimeout(resolve, 1000))]);
-      if (ctx.state !== 'running') throw new Error(`AudioContext is ${ctx.state}`);
-    } catch (e) {
-      console.warn('Audio processing unavailable:', e);
-      if (ctx) ctx.close();
-      return;
-    }
+    if (!rawTrack) return;
+    const ctx = await this.ensureAudioContext(generation);
+    if (!ctx) return;
 
     const source = ctx.createMediaStreamSource(new MediaStream([rawTrack]));
     // Remove rumble, desk thumps and mains hum below the voice range
@@ -193,17 +191,13 @@ class MediaEngine {
     } catch (e) {
       console.warn('RNNoise noise suppression unavailable, using browser noise suppression only:', e);
     }
-    // destroy() ran while the worklet was loading: the caller discards the stream
-    if (generation !== this.generation) {
-      ctx.close();
-      return;
-    }
+    // destroy() ran while the worklet was loading (it closed the context): the caller discards the stream
+    if (generation !== this.generation) return;
 
     const destination = ctx.createMediaStreamDestination();
     cleaned.connect(destination);
     const processedTrack = destination.stream.getAudioTracks()[0];
 
-    this.audioContext = ctx;
     this.noiseSuppressor = noiseSuppressor;
     this.rawAudioTrack = rawTrack;
     this.micSource = source;
@@ -211,10 +205,79 @@ class MediaEngine {
     stream.removeTrack(rawTrack);
     stream.addTrack(processedTrack);
     this.localDetector = new VoiceDetector(ctx, cleaned);
-    this.startLevelMonitor();
-    // Peers whose audio arrived while the pipeline was loading
-    for (const [peerId, remoteStream] of this.remoteStreams) {
-      this.watchPeerAudio(peerId, remoteStream);
+  }
+
+  /**
+   * The audio graph shared by the microphone's processing and the peers' speaking detection.
+   * Created once per call; resolves null when audio processing cannot run.
+   */
+  ensureAudioContext(generation) {
+    if (!this.audioContextReady) {
+      this.audioContextReady = (async () => {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return null;
+        let ctx;
+        try {
+          ctx = new AudioCtx({ sampleRate: AUDIO_SAMPLE_RATE, latencyHint: 'interactive' });
+          // A suspended context would send silence; give up on processing if it will not run
+          await Promise.race([ctx.resume(), new Promise(resolve => setTimeout(resolve, 1000))]);
+          if (ctx.state !== 'running') throw new Error(`AudioContext is ${ctx.state}`);
+        } catch (e) {
+          console.warn('Audio processing unavailable:', e);
+          if (ctx) ctx.close();
+          return null;
+        }
+        if (generation !== this.generation) {
+          ctx.close();
+          return null;
+        }
+        this.audioContext = ctx;
+        this.startLevelMonitor();
+        // Peers whose audio arrived while the context was starting
+        for (const [peerId, remoteStream] of this.remoteStreams) {
+          this.watchPeerAudio(peerId, remoteStream);
+        }
+        return ctx;
+      })();
+    }
+    return this.audioContextReady;
+  }
+
+  /**
+   * Open the microphone during the call (joined without voice permission). The new track starts
+   * muted and is added to every connection (one negotiation); the caller unmutes it.
+   * Resolves the track, or null when the engine was reset meanwhile. Throws when it cannot be opened.
+   */
+  async startMicrophone() {
+    const existing = this.localStream?.getAudioTracks()[0];
+    if (existing) return existing;
+    if (this.micStarting) return this.micStarting;
+    const generation = this.generation;
+    this.micStarting = (async () => {
+      const preferred = this.preferredDevices.audioinput ? { deviceId: { ideal: this.preferredDevices.audioinput } } : {};
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { ...AUDIO_CONSTRAINTS, ...preferred } });
+      if (generation !== this.generation) {
+        stream.getTracks().forEach(t => t.stop());
+        return null;
+      }
+      await this.setupAudioProcessing(stream, generation);
+      const track = stream.getAudioTracks()[0];
+      if (generation !== this.generation || !track) {
+        stream.getTracks().forEach(t => t.stop());
+        return null;
+      }
+      if (!this.localStream) this.localStream = new MediaStream();
+      this.localStream.addTrack(track);
+      this.setAudioEnabled(false);
+      for (const pc of this.peerConnections.values()) {
+        if (pc.signalingState !== 'closed') this.addLocalTracks(pc);
+      }
+      return track;
+    })();
+    try {
+      return await this.micStarting;
+    } finally {
+      this.micStarting = null;
     }
   }
 
@@ -350,6 +413,11 @@ class MediaEngine {
    */
   async switchMicrophone(deviceId) {
     const current = this.rawAudioTrack || this.localStream?.getAudioTracks()[0];
+    // Microphone not opened yet (no voice permission so far): only remember the choice
+    if (!current) {
+      this.setPreferredDevices({ audioinput: deviceId });
+      return null;
+    }
     const stream = await navigator.mediaDevices.getUserMedia({ audio: { ...AUDIO_CONSTRAINTS, deviceId: { exact: deviceId } } });
     const track = stream.getAudioTracks()[0];
     track.enabled = current ? current.enabled : true;
@@ -567,6 +635,8 @@ class MediaEngine {
     this.noiseSuppressor = null; // released with the AudioContext below
     if (this.audioContext) this.audioContext.close();
     this.audioContext = null;
+    this.audioContextReady = null;
+    this.micStarting = null;
     if (this.rawAudioTrack) this.rawAudioTrack.stop();
     this.rawAudioTrack = null;
     this.micSource = null;

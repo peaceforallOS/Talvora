@@ -1,5 +1,6 @@
 /**
- * Camera Tests — the camera opens only while it is on: joining opens just the microphone, turning
+ * Camera Tests — the camera opens only while it is on: joining opens just the microphone (nothing
+ * at all without voice permission; it opens later, muted), turning
  * the camera off releases it, and every connection keeps one video slot that the camera and screen
  * sharing reuse (only the first video needs a negotiation).
  */
@@ -23,10 +24,12 @@ global.MediaStream = class {
   removeTrack(t) { this.tracks = this.tracks.filter(x => x !== t); }
 };
 const opened = [];
+let lastConstraints = null;
 // Node has its own read-only navigator: replace it for the media engine
 Object.defineProperty(globalThis, 'navigator', { configurable: true, value: {
   mediaDevices: {
     getUserMedia: async constraints => {
+      lastConstraints = constraints;
       const tracks = [];
       if (constraints.audio) tracks.push(new FakeTrack('audio', 'mic'));
       if (constraints.video) tracks.push(new FakeTrack('video', `camera-${opened.length + 1}`));
@@ -111,6 +114,27 @@ const MediaEngine = require('../src/mediaEngine');
   console.log('✓ Test 6 Passed: New peers and camera choice handled');
 
   engine.destroy();
+
+  // 7. Joining without voice permission opens nothing; the microphone opens later, still muted
+  const quiet = new MediaEngine();
+  const before = opened.length;
+  await quiet.initLocalMedia({ audio: false });
+  assert.strictEqual(opened.length, before, 'Nothing may be opened without voice permission');
+  const quietPeer = quiet.createPeerConnection('peer-3', true);
+  assert.strictEqual(quietPeer.addTrackCalls, 0, 'Nothing is sent without voice or camera');
+  assert.strictEqual(await quiet.switchMicrophone('desk-mic'), null, 'Choosing a microphone before it may be used must not open it');
+  assert.strictEqual(opened.length, before);
+  const [micA, micB] = await Promise.all([quiet.startMicrophone(), quiet.startMicrophone()]);
+  assert.ok(micA && micA === micB, 'Opening the microphone twice at once opens it once');
+  assert.strictEqual(opened.length, before + 1);
+  assert.deepStrictEqual(lastConstraints.audio.deviceId, { ideal: 'desk-mic' }, 'The chosen microphone is used');
+  assert.strictEqual(micA.enabled, false, 'The microphone starts muted');
+  assert.strictEqual(quietPeer.addTrackCalls, 1, 'The microphone is added to the call');
+  assert.strictEqual(quietPeer.getSenders()[0].track, micA);
+  assert.strictEqual(quiet.setAudioEnabled(true), true, 'Unmuting works');
+  quiet.destroy();
+  assert.ok(micA.stopped, 'Leaving releases the microphone');
+  console.log('✓ Test 7 Passed: Without voice permission the microphone opens only when allowed and unmuted');
   console.log('\n========================================');
   console.log(' ALL CAMERA TESTS PASSED!               ');
   console.log('========================================');

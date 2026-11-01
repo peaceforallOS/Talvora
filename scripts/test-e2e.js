@@ -148,6 +148,9 @@ async function runE2E() {
   assert.ok(omidJoined === true, 'Omid join failed');
   assert.ok(coreOmid.currentUser.role === Role.USER, 'Omid should have regular user role');
   assert.ok(coreOmid.currentUser.permissions.can_invite === false, 'Omid should NOT have can_invite by default');
+  assert.ok(coreOmid.currentUser.permissions.can_audio === false && coreOmid.currentUser.permissions.can_video === false,
+    'Invited users should start without voice and video');
+  assert.ok(coreAdmin.currentUser.permissions.can_audio && coreAdmin.currentUser.permissions.can_video, 'Admin should have voice and video');
   console.log('  [PASS] Omid joined successfully with regular user role and default permissions.\n');
 
   // STEP 6: Multi-User Voice & Video Signaling Relay (Instruction 1)
@@ -157,6 +160,8 @@ async function runE2E() {
     createPeerConnection: () => {},
     handleSignal: (peerId, sig) => { omidReceivedSignal = sig; },
     removePeer: () => {},
+    setAudioEnabled: () => {},
+    stopCamera: () => {},
     destroy: () => {}
   };
 
@@ -244,7 +249,19 @@ async function runE2E() {
   assert.ok(kavehInvite && kavehInvite.username === 'Kaveh', 'Kaveh invite failed');
   console.log('  -> Omid successfully generated invite link for "Kaveh" using delegated permission.');
 
-  // 9d. Admin revokes audio and chat access for Sarah via panel
+  // 9d. Admin turns on voice and video for Sarah via panel, then revokes audio and chat
+  const enableRes = await httpPost(`${SERVER_URL}/api/admin/permissions`, {
+    token: adminCreds.adminToken,
+    userId: sarahParticipant.id,
+    permissions: { ...sarahParticipant.permissions, can_audio: true, can_video: true }
+  });
+  assert.ok(enableRes.status === 200, 'Enabling voice and video failed');
+  await sleep(300);
+  assert.ok(coreSarah.currentUser.permissions.can_audio === true && coreSarah.currentUser.permissions.can_video === true,
+    'Sarah did not receive voice and video');
+  assert.ok(sarahParticipant.mediaState.audio === false && sarahParticipant.mediaState.video === false,
+    'Microphone and camera must stay off until Sarah turns them on');
+  console.log('  -> Admin panel enabled voice and video for Sarah (both still off until she turns them on).');
   const revokeRes = await httpPost(`${SERVER_URL}/api/admin/permissions`, {
     token: adminCreds.adminToken,
     userId: sarahParticipant.id,

@@ -312,6 +312,9 @@ const server = (TLS_ENABLED ? https : http).createServer(async (req, res) => {
       if (!user) {
         return sendJson(res, 404, { error: 'User not found in room' });
       }
+      if (user.role === Role.ADMIN) {
+        return sendJson(res, 403, { error: 'Admins always have every permission' });
+      }
 
       // Saved first, so a rejoin with the same link cannot win the permissions back
       authService.setPermissionOverrides(user.username, permissions);
