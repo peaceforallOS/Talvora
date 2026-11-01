@@ -116,7 +116,9 @@
   clientCore = new ClientCore({
     mediaEngine,
     onAuthSuccess: (user, roomState) => {
+      rejoinUntil = 0;
       if (pendingJoin) {
+        lastJoin = { ...pendingJoin, role: user.role };
         serverHistory.record({ ...pendingJoin, roomId: roomState.roomId });
         // In the background: is the audio/video port reachable, and does the firewall allow Talvora?
         const origin = ServerHistory.serverOf(pendingJoin.link);
@@ -127,6 +129,13 @@
       showRoomScreen(user, roomState);
     },
     onAuthError: err => {
+      // Rejoining after a lost connection: the server may be back any moment
+      if (rejoinUntil && ['ERR_CONNECTION_FAILED', 'ERR_SOCKET_INIT'].includes(err.code)) {
+        joinSpinner.classList.remove('hidden');
+        setTimeout(tryRejoin, 2000);
+        return;
+      }
+      rejoinUntil = 0;
       showJoinError(err.message || 'Authentication error.');
       // Could not reach the server at all: find out which port is blocked, and where
       if (err.code === 'ERR_CONNECTION_FAILED' && pendingJoin) {
@@ -157,15 +166,26 @@
       showToast(`Invite link generated for ${data.username}`);
     },
     onKicked: data => {
+      rejoinUntil = 0;
       leaveRoom();
       showJoinError(`You have been disconnected from the room: ${data.reason}`);
     },
     onDisconnected: data => {
       leaveRoom();
+      // The others are removed when the admin stays away: the admin's app rejoins by itself
+      if (lastJoin?.role === 'admin') {
+        rejoinUntil = Date.now() + ADMIN_REJOIN_MS;
+        showToast('The connection to the server was lost. Reconnecting…', ADMIN_REJOIN_MS);
+        tryRejoin();
+        return;
+      }
       showJoinError(data.reason);
     },
     onServerError: msg => {
       showToast(msg);
+    },
+    onNotice: msg => {
+      showToast(msg, 9000);
     }
   });
 
@@ -211,6 +231,23 @@
   const btnPingAll = document.getElementById('btn-ping-all');
   const pingResults = new Map(); // server -> { status: 'checking' | 'online' | 'offline', ms, reason }
   let pendingJoin = null; // { username, link } until the server accepts it
+  // The admin's app rejoins by itself after a lost connection, within the time the server keeps the
+  // others in the room (see RoomManager's ADMIN_GRACE_MS)
+  const ADMIN_REJOIN_MS = 10 * 1000;
+  let lastJoin = null; // { username, link, role } of the room we are in
+  let rejoinUntil = 0; // while rejoining: when to give up
+
+  function tryRejoin() {
+    if (!lastJoin || !rejoinUntil || Date.now() > rejoinUntil) {
+      rejoinUntil = 0;
+      showJoinError('The connection to the server was lost.');
+      return;
+    }
+    inputUsername.value = lastJoin.username;
+    inputLink.value = lastJoin.link;
+    btnJoin.disabled = false;
+    btnJoin.click();
+  }
 
   function timeAgo(timestamp) {
     const minutes = Math.floor((Date.now() - timestamp) / 60000);
@@ -878,6 +915,7 @@
   });
 
   btnConfirmLeave.addEventListener('click', () => {
+    lastJoin = null; // left on purpose: never rejoin by itself
     leaveRoom();
   });
 
@@ -1387,7 +1425,7 @@
     }
   });
 
-  function showToast(msg) {
+  function showToast(msg, duration = 3000) {
     const t = document.createElement('div');
     t.className = 'toast';
     t.textContent = msg;
@@ -1395,7 +1433,7 @@
     setTimeout(() => {
       t.style.opacity = '0';
       setTimeout(() => t.remove(), 300);
-    }, 3000);
+    }, duration);
   }
 
   // --- Small UI helpers ---

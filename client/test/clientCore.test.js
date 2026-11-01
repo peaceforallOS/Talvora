@@ -44,6 +44,21 @@ async function runClientCoreTests() {
   assert.ok(mismatchError && mismatchError.message === 'Username and link do not match.', 'Mismatch error check failed');
   console.log('✓ Test 2 Passed: Ali entering Omid link rejected with "Username and link do not match."');
 
+  // 2b. Invited users cannot join before the admin
+  let earlyError = null;
+  const coreEarly = new ClientCore({ onAuthError: err => { earlyError = err; } });
+  coreEarly.connect({ username: 'Omid', linkOrToken: omidInvite.joinLink, serverUrl });
+  await new Promise(r => setTimeout(r, 400));
+  assert.ok(earlyError && earlyError.code === 'ERR_ADMIN_ABSENT', 'Joined before the admin');
+  assert.strictEqual(earlyError.message, 'The admin is not in the room yet. Please try again later.');
+  assert.strictEqual(roomManager.participants.size, 0, 'Someone is in the room without the admin');
+  // The admin opens the room (Test 5 joins the admin again, from a second window)
+  const coreOpener = new ClientCore();
+  coreOpener.connect({ username: 'Admin', linkOrToken: creds.adminLink, serverUrl });
+  await new Promise(r => setTimeout(r, 400));
+  assert.ok(coreOpener.currentUser, 'Admin failed to join');
+  console.log('✓ Test 2b Passed: Invited users wait for the admin to open the room');
+
   // 3. Test Success: Omid joins with Omid's token
   let omidUser = null;
   let omidRoomState = null;

@@ -23,7 +23,8 @@ const MessageType = {
   PERMISSIONS_UPDATED: 'permissions_updated',
   CHAT_DELIVER: 'chat_deliver',
   INVITE_GENERATED: 'invite_generated',
-  KICKED: 'kicked'
+  KICKED: 'kicked',
+  ROOM_NOTICE: 'room_notice' // { message }: shown to everyone (e.g. the admin left / is back)
 };
 
 // Chat Modes

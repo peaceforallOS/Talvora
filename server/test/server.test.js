@@ -54,6 +54,18 @@ async function runTests() {
   assert.ok(creds.adminLink.includes('/join?room='), 'Admin join link check failed');
   console.log('✓ Test 1 Passed: Admin panel URL and login link generated successfully');
 
+  // Test 1b: Invited users cannot join before the admin is in the room
+  const earlyWs = createWsClient();
+  await new Promise(r => earlyWs.on('open', r));
+  const earlyToken = authService.generateInviteLink({ baseUrl: 'http://localhost:8099', targetUsername: 'Early' }).token;
+  earlyWs.send(JSON.stringify({ type: MessageType.AUTH, username: 'Early', token: earlyToken }));
+  const earlyError = await waitForMessage(earlyWs, MessageType.AUTH_ERROR);
+  assert.strictEqual(earlyError.code, 'ERR_ADMIN_ABSENT');
+  assert.strictEqual(earlyError.message, 'The admin is not in the room yet. Please try again later.');
+  assert.strictEqual(roomManager.participants.size, 0, 'Nobody may be in the room before the admin');
+  earlyWs.close();
+  console.log('✓ Test 1b Passed: Invited users wait for the admin');
+
   // Test 2: Admin joins via WebSocket
   const adminWs = createWsClient();
   await new Promise(r => adminWs.on('open', r));
@@ -147,8 +159,56 @@ async function runTests() {
   assert.ok(chatErr.message.includes('revoked'), 'Chat revoke error message check failed');
   console.log('✓ Test 7 Passed: Revoked chat permission successfully blocked messaging');
 
-  // Clean up
+  // Test 8: The admin leaves and comes back in time: everyone stays
+  roomManager.adminGraceMs = 800; // 10 seconds in use; shorter here
+  const joinAdmin = async (options) => {
+    const ws = new WebSocket(WS_URL, options);
+    await new Promise(r => ws.on('open', r));
+    ws.send(JSON.stringify({ type: MessageType.AUTH, username: 'Admin', token: creds.adminToken }));
+    await waitForMessage(ws, MessageType.AUTH_SUCCESS);
+    return ws;
+  };
+  let leftNotice = waitForMessage(omidWs, MessageType.ROOM_NOTICE);
+  const rezaLeftNotice = waitForMessage(rezaWs, MessageType.ROOM_NOTICE);
   adminWs.close();
+  assert.match((await leftNotice).message, /The admin left the room\. Everyone will be removed in 1 seconds/);
+  await rezaLeftNotice;
+  const omidKicks = [];
+  omidWs.on('message', raw => { if (JSON.parse(raw).type === MessageType.KICKED) omidKicks.push(JSON.parse(raw)); });
+  const backNotice = waitForMessage(rezaWs, MessageType.ROOM_NOTICE);
+  let admin2 = await joinAdmin();
+  assert.strictEqual((await backNotice).message, 'The admin is back.');
+  await sleep(1200);
+  assert.ok(roomManager.getParticipantByUsername('Omid') && roomManager.getParticipantByUsername('Reza'), 'Users removed although the admin came back');
+  assert.strictEqual(omidKicks.length, 0);
+  console.log('✓ Test 8 Passed: The admin coming back in time keeps everyone in the room');
+
+  // Test 9: The admin joining again from another window is not "leaving"
+  const notices = [];
+  rezaWs.on('message', raw => { if (JSON.parse(raw).type === MessageType.ROOM_NOTICE) notices.push(JSON.parse(raw)); });
+  const admin3 = await joinAdmin();
+  await sleep(300);
+  assert.deepStrictEqual(notices, [], 'A second admin window must not announce that the admin left');
+  assert.strictEqual(roomManager.adminGraceTimer, null);
+  admin2.close();
+  console.log('✓ Test 9 Passed: Switching the admin to another window keeps the room as it is');
+
+  // Test 10: An admin connection that stops answering is noticed (heartbeat), then everyone is removed
+  const silentAdmin = await joinAdmin({ autoPong: false }); // like a laptop that went to sleep
+  admin3.close();
+  leftNotice = waitForMessage(omidWs, MessageType.ROOM_NOTICE, 15000);
+  const omidKicked = waitForMessage(omidWs, MessageType.KICKED, 20000);
+  const rezaKicked = waitForMessage(rezaWs, MessageType.KICKED, 20000);
+  await leftNotice;
+  assert.strictEqual(roomManager.getParticipantByUsername('Admin'), null, 'Silent admin connection not closed');
+  assert.strictEqual((await omidKicked).reason, 'The admin left the room.');
+  assert.strictEqual((await rezaKicked).reason, 'The admin left the room.');
+  await sleep(100);
+  assert.strictEqual(roomManager.participants.size, 0, 'Everyone must be removed when the admin stays away');
+  silentAdmin.terminate();
+  console.log('✓ Test 10 Passed: When the admin stays away, everyone is removed after the wait');
+
+  // Clean up
   omidWs.close();
   rezaWs.close();
   server.close();

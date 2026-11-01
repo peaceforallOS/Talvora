@@ -16,6 +16,7 @@ class ClientCore {
     this.onConnectionStatus = options.onConnectionStatus || (() => {});
     this.onDisconnected = options.onDisconnected || (() => {});
     this.onServerError = options.onServerError || (() => {});
+    this.onNotice = options.onNotice || (() => {}); // room news from the server, e.g. the admin left
 
     this.ws = null;
     this.currentUser = null;
@@ -290,6 +291,10 @@ class ClientCore {
 
       case 'error':
         this.onServerError(msg.message || 'The server rejected the request.');
+        break;
+
+      case 'room_notice':
+        if (typeof msg.message === 'string') this.onNotice(msg.message);
         break;
 
       // 10. WebRTC Signaling Relay

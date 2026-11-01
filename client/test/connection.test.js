@@ -19,6 +19,12 @@ async function runConnectionTests() {
 
   const serverUrl = 'http://localhost:8094';
 
+  // The admin opens the room
+  const coreAdmin = new ClientCore();
+  coreAdmin.connect({ username: 'Admin', linkOrToken: authService.getAdminCredentials(serverUrl).adminLink, serverUrl });
+  await sleep(400);
+  assert.ok(coreAdmin.currentUser, 'Admin failed to join');
+
   // 1. A kick (message + close code 4001) is reported exactly once
   const kicks = [];
   const disconnects = [];

@@ -99,7 +99,14 @@ async function runAdminPanelTests() {
   assert.ok(Math.abs(session.expiresAt - (Date.now() + 3 * 3600 * 1000)) < 5000, 'Session must last 3 hours');
   console.log('✓ Test 3b Passed: First visit sets a confirmed password and signs in with a browser-session cookie');
 
-  // 3. Connect a dummy user via WebSocket to simulate an active room participant
+  // 3. The admin opens the room, then a dummy user joins via WebSocket as an active room participant
+  const adminWs = new WebSocket('ws://localhost:8098');
+  await new Promise(r => adminWs.on('open', r));
+  adminWs.send(JSON.stringify({ type: MessageType.AUTH, username: 'Admin', token: authService.getAdminToken() }));
+  await new Promise(r => adminWs.on('message', raw => {
+    if (JSON.parse(raw).type === MessageType.AUTH_SUCCESS) r();
+  }));
+
   const invite = authService.generateInviteLink({ baseUrl: BASE_URL, targetUsername: 'Tester1' });
   const ws = new WebSocket('ws://localhost:8098');
   await new Promise(r => ws.on('open', r));
@@ -189,7 +196,7 @@ async function runAdminPanelTests() {
   });
 
   assert.ok(kickRes.statusCode === 200, 'Kick API failed');
-  assert.ok(roomManager.participants.size === 0, 'User should be removed from room');
+  assert.ok(!roomManager.getParticipantByUsername('Tester1') && roomManager.participants.size === 1, 'User should be removed from room');
   console.log('✓ Test 8 Passed: Admin panel kicked user and room state updated immediately');
 
   const joinAs = (username, token) => new Promise(resolve => {

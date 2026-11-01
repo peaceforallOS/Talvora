@@ -428,9 +428,27 @@ const wss = new WebSocketServer({ server, maxPayload: MAX_WS_PAYLOAD });
 
 let nextConnectionId = 1;
 
+// Connections that stop answering (a sleeping laptop, a lost network) are closed within two rounds,
+// so a participant who is gone (above all the admin) is noticed in seconds. Browsers answer pings themselves.
+const HEARTBEAT_MS = 5000;
+setInterval(() => {
+  for (const ws of wss.clients) {
+    if (ws.isAlive === false) {
+      ws.terminate();
+      continue;
+    }
+    ws.isAlive = false;
+    ws.ping();
+  }
+}, HEARTBEAT_MS).unref();
+
 wss.on('connection', (ws, req) => {
   const connectionId = `conn_${Date.now()}_${nextConnectionId++}`;
   let currentUser = null;
+  ws.isAlive = true;
+  ws.on('pong', () => {
+    ws.isAlive = true;
+  });
 
   const handleMessage = rawData => {
     let msg;
@@ -469,10 +487,20 @@ wss.on('connection', (ws, req) => {
         return;
       }
 
+      // The admin opens the room: invited users wait until the admin is in it
+      if (validation.user.role !== Role.ADMIN && !roomManager.hasAdmin()) {
+        ws.send(JSON.stringify({
+          type: MessageType.AUTH_ERROR,
+          code: 'ERR_ADMIN_ABSENT',
+          message: 'The admin is not in the room yet. Please try again later.'
+        }));
+        return;
+      }
+
       // A link is bound to one user: a new login replaces any stale session for the same username
       const existing = roomManager.getParticipantByUsername(validation.user.username);
       if (existing) {
-        roomManager.kickParticipant(existing.id, 'You joined the room from another device or window.');
+        roomManager.kickParticipant(existing.id, 'You joined the room from another device or window.', { replaced: true });
       }
 
       // Valid credentials: join room

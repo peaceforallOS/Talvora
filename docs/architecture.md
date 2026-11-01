@@ -78,6 +78,17 @@ The panel's **Kick** button only disconnects a user; their link keeps working. *
 before the removal is rejected from then on; a new invite generated later works normally.
 The admin cannot be removed.
 
+### 2.7a The Admin Opens the Room
+- Invited users can only join while the admin is in the room; otherwise `auth_error` with code
+  `ERR_ADMIN_ABSENT` ("The admin is not in the room yet. Please try again later.").
+- When the admin leaves for any reason (Leave, closed app, lost connection, kicked from the panel), the others get a
+  `room_notice` and stay for 10 seconds (`ADMIN_GRACE_MS`, `server/src/roomManager.js`). If the admin is back by then
+  they stay (`room_notice` "The admin is back."); otherwise everyone is kicked with the reason "The admin left the room."
+  The admin joining again from another window replaces the old session without starting the wait.
+- The server pings every connection every 5 seconds and closes one that misses a round, so a sleeping laptop or a
+  dropped network counts as leaving within about 10 seconds.
+- The admin's app rejoins by itself when its connection is lost (not after Leave), retrying for 10 seconds.
+
 ---
 
 ## 3. Communication Protocols
@@ -151,12 +162,13 @@ indicator uses the cleaned signal: RMS above -50 dBFS, held for 400 ms between w
 | Type | Payload | Description |
 |------|---------|-------------|
 | `auth_success` | `{ user: {...}, roomState: { roomId, participants }, iceServers: [...] }` | Emitted on valid join; `iceServers` includes the TURN relay. |
-| `auth_error` | `{ code: 'ERR_CREDENTIAL_MISMATCH', message: string }` | Emitted when username and link mismatch. |
+| `auth_error` | `{ code: 'ERR_CREDENTIAL_MISMATCH' \| 'ERR_ADMIN_ABSENT' \| ..., message: string }` | Emitted when joining is refused (e.g. username and link mismatch, or the admin is not in the room). |
 | `user_joined` | `{ user: {...} }` | Notifies that a new user entered. |
 | `user_left` | `{ userId: string, reason: string }` | Notifies user departure or kick. |
 | `permissions_updated`| `{ userId: string, permissions: {...} }` | Real-time push when admin toggles permissions. |
 | `chat_message` | `{ id, senderId, senderName, mode, recipients, text, timestamp }` | Delivered chat message. |
 | `kick` | `{ reason: string }` | Force disconnection notice. |
+| `room_notice` | `{ message: string }` | Room news shown to everyone (the admin left / is back). |
 
 ---
 

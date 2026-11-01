@@ -14,11 +14,49 @@ try {
 }
 const { MessageType, Role } = protocol;
 
+// How long the others stay in the room after the admin leaves; the admin coming back in time keeps them
+const ADMIN_GRACE_MS = 10 * 1000;
+
 class RoomManager {
-  constructor(roomId = 'main-room') {
+  constructor(roomId = 'main-room', { adminGraceMs = ADMIN_GRACE_MS } = {}) {
     this.roomId = roomId;
     this.participants = new Map(); // userId -> { id, username, role, permissions, mediaState, ws, joinedAt }
     this.onParticipantRemoved = null; // (user) => void, called after every leave or kick
+    this.adminGraceMs = adminGraceMs;
+    this.adminGraceTimer = null; // running while the admin is away and the others wait for them
+  }
+
+  // Invited users can only join (and stay) while the admin is in the room
+  hasAdmin() {
+    for (const user of this.participants.values()) {
+      if (user.role === Role.ADMIN) return true;
+    }
+    return false;
+  }
+
+  notice(message, excludeId = null) {
+    this.broadcast({ type: MessageType.ROOM_NOTICE, message }, excludeId);
+  }
+
+  startAdminGrace() {
+    if (this.adminGraceTimer || this.participants.size === 0) return;
+    const seconds = Math.round(this.adminGraceMs / 1000);
+    this.notice(`The admin left the room. Everyone will be removed in ${seconds} seconds unless the admin comes back.`);
+    this.adminGraceTimer = setTimeout(() => {
+      this.adminGraceTimer = null;
+      if (this.hasAdmin()) return;
+      for (const id of [...this.participants.keys()]) {
+        this.kickParticipant(id, 'The admin left the room.');
+      }
+    }, this.adminGraceMs);
+    if (this.adminGraceTimer.unref) this.adminGraceTimer.unref();
+  }
+
+  cancelAdminGrace(adminId) {
+    if (!this.adminGraceTimer) return;
+    clearTimeout(this.adminGraceTimer);
+    this.adminGraceTimer = null;
+    this.notice('The admin is back.', adminId);
   }
 
   addParticipant({ id, username, role, permissions, ws }) {
@@ -46,11 +84,13 @@ class RoomManager {
       },
       id
     );
+    if (user.role === Role.ADMIN) this.cancelAdminGrace(id);
 
     return user;
   }
 
-  removeParticipant(id, reason = 'disconnected') {
+  // replaced: the same person is joining again right away (another window), so the admin is not away
+  removeParticipant(id, reason = 'disconnected', { replaced = false } = {}) {
     const user = this.participants.get(id);
     if (!user) return null;
 
@@ -64,6 +104,8 @@ class RoomManager {
       username: user.username,
       reason
     });
+
+    if (user.role === Role.ADMIN && !replaced && !this.hasAdmin()) this.startAdminGrace();
 
     return user;
   }
@@ -152,7 +194,7 @@ class RoomManager {
     return user.permissions;
   }
 
-  kickParticipant(userId, reason = 'Kicked by admin') {
+  kickParticipant(userId, reason = 'Kicked by admin', { replaced = false } = {}) {
     const user = this.participants.get(userId);
     if (!user) return false;
 
@@ -167,7 +209,7 @@ class RoomManager {
       user.ws.close(4001, Buffer.from(String(reason)).subarray(0, 123).toString().replace(/\uFFFD+$/, ''));
     }
 
-    this.removeParticipant(userId, reason);
+    this.removeParticipant(userId, reason, { replaced });
     return true;
   }
 

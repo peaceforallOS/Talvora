@@ -37,6 +37,7 @@ async function runChatTests() {
   const coreCharlie = new ClientCore({ onChatMessage: m => charlieMsgs.push(m) });
 
   coreAdmin.connect({ username: 'Admin', linkOrToken: adminInvite.adminLink, serverUrl });
+  await sleep(300); // the admin opens the room
   coreAlice.connect({ username: 'Alice', linkOrToken: aliceInvite.joinLink, serverUrl });
   coreBob.connect({ username: 'Bob', linkOrToken: bobInvite.joinLink, serverUrl });
   coreCharlie.connect({ username: 'Charlie', linkOrToken: charlieInvite.joinLink, serverUrl });
