@@ -1,5 +1,5 @@
 /**
- * Chat Box Controller — Public, Direct & Group Messaging
+ * Chat Box Controller — Public & Direct Messaging
  */
 
 class ChatController {
@@ -15,7 +15,7 @@ class ChatController {
     this.revokedBanner = options.revokedBanner;
     this.onNotice = options.onNotice || (() => {}); // shown in the app, never as a native alert()
 
-    this.currentMode = 'public'; // 'public' | 'direct' | 'group'
+    this.currentMode = 'public'; // 'public' | 'direct'
     this.selectedRecipients = new Set();
     this.messages = [];
     this.isPanelOpen = true;
@@ -64,18 +64,9 @@ class ChatController {
       chip.className = `chip ${this.selectedRecipients.has(p.id) ? 'selected' : ''}`;
       chip.textContent = p.username;
       chip.addEventListener('click', () => {
-        if (this.currentMode === 'direct') {
-          // Direct is single selection
-          this.selectedRecipients.clear();
-          this.selectedRecipients.add(p.id);
-        } else {
-          // Group is multi-selection
-          if (this.selectedRecipients.has(p.id)) {
-            this.selectedRecipients.delete(p.id);
-          } else {
-            this.selectedRecipients.add(p.id);
-          }
-        }
+        // A direct message goes to one person
+        this.selectedRecipients.clear();
+        this.selectedRecipients.add(p.id);
         this.updateRecipientsUI();
       });
       this.recipientsList.appendChild(chip);
@@ -111,8 +102,7 @@ class ChatController {
 
     const modeLabels = {
       public: 'Public',
-      direct: 'Direct',
-      group: 'Group'
+      direct: 'Direct'
     };
 
     const timeStr = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });

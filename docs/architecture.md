@@ -143,7 +143,7 @@ indicator uses the cleaned signal: RMS above -50 dBFS, held for 400 ms between w
 |------|---------|-------------|
 | `auth` | `{ username, token, roomId }` | Authenticates and joins the room. |
 | `invite_generate` | `{ targetUsername }` | Requests invite link generation for `targetUsername`. |
-| `chat_message` | `{ mode: 'public'\|'direct'\|'group', recipients: [userId], text: string }` | Sends a message. |
+| `chat_message` | `{ mode: 'public'\|'direct', recipients: [userId], text: string }` | Sends a message (direct: to the one recipient). |
 | `media_state` | `{ audio: boolean, video: boolean, screen: boolean }` | Reports client media mute/active state. |
 | `webrtc_signal` | `{ targetPeerId, signal }` | ICE candidates & SDP offer/answer for media relay. |
 

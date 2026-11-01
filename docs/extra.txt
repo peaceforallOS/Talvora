@@ -24,9 +24,9 @@ simple and elegant:
      users can diagnose poor local network conditions.
 
 4. Chat Message Delivery & Timestamp Formatting
-   - Description: All chat messages (public, direct, and group) feature localized 
+   - Description: All chat messages (public and direct) feature localized 
      timestamps, delivery acknowledgments, and clear visual separation with 
-     distinct badges distinguishing Public, Private (1-to-1), and Group messages.
+     distinct badges distinguishing Public and Private (1-to-1) messages.
 
 5. Client Device Selector & Live Previews
    - Description: Before or during a call, users can easily select their desired 

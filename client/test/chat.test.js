@@ -1,5 +1,5 @@
 /**
- * Section 5 Integration Tests — Chat Box Modes (Public, Direct & Group)
+ * Section 5 Integration Tests — Chat Box Modes (Public & Direct)
  */
 
 process.env.PORT = '8096';
@@ -76,20 +76,19 @@ async function runChatTests() {
   assert.ok(!adminMsgs.some(m => m.text === 'Secret 1-to-1 message for Bob'), 'Admin received private 1-to-1 message!');
   console.log('✓ Test 2 Passed: Direct 1-to-1 chat delivered strictly to target recipient');
 
-  // 3. Test Group Chat (Selective recipients)
-  // Alice sends group message to Bob and Charlie (Admin is excluded)
+  // 3. Only public and direct messages exist: any other kind is delivered to no one
+  assert.deepStrictEqual(Object.values(ChatMode).sort(), ['direct', 'public']);
   coreAlice.sendChatMessage({
-    mode: ChatMode.GROUP,
+    mode: 'several',
     recipients: [bobUser.id, charlieUser.id],
-    text: 'Team group announcement for Bob and Charlie'
+    text: 'Message of an unsupported kind'
   });
 
   await sleep(300);
-  assert.ok(bobMsgs.some(m => m.text === 'Team group announcement for Bob and Charlie'), 'Bob should receive group message');
-  assert.ok(charlieMsgs.some(m => m.text === 'Team group announcement for Bob and Charlie'), 'Charlie should receive group message');
-  assert.ok(aliceMsgs.some(m => m.text === 'Team group announcement for Bob and Charlie'), 'Alice should receive own group message');
-  assert.ok(!adminMsgs.some(m => m.text === 'Team group announcement for Bob and Charlie'), 'Admin was excluded but received group message!');
-  console.log('✓ Test 3 Passed: Group chat delivered selectively to chosen recipients');
+  for (const msgs of [aliceMsgs, bobMsgs, charlieMsgs, adminMsgs]) {
+    assert.ok(!msgs.some(m => m.text === 'Message of an unsupported kind'), 'A message of an unsupported kind was delivered!');
+  }
+  console.log('✓ Test 3 Passed: Only public and direct messages are delivered');
 
   // 4. Test Chat Revocation Enforcement
   roomManager.updatePermissions(aliceUser.id, { can_chat: false });

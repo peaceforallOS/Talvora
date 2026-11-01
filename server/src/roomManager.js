@@ -190,16 +190,6 @@ class RoomManager {
     }
     return false;
   }
-
-  sendToMultiple(userIds, message) {
-    const payload = JSON.stringify(message);
-    for (const id of userIds) {
-      const user = this.participants.get(id);
-      if (user && user.ws && user.ws.readyState === 1) {
-        user.ws.send(payload);
-      }
-    }
-  }
 }
 
 module.exports = RoomManager;

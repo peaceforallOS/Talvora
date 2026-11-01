@@ -550,7 +550,7 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    // 3. Chat Messaging (Public, Direct, Group)
+    // 3. Chat Messaging (Public, Direct)
     if (msg.type === MessageType.CHAT_SEND) {
       if (!currentUser.permissions.can_chat) {
         ws.send(JSON.stringify({
@@ -569,7 +569,13 @@ wss.on('connection', (ws, req) => {
         }));
         return;
       }
-      if (![ChatMode.PUBLIC, ChatMode.DIRECT, ChatMode.GROUP].includes(mode)) return;
+      if (![ChatMode.PUBLIC, ChatMode.DIRECT].includes(mode)) {
+        ws.send(JSON.stringify({
+          type: 'error',
+          message: 'This kind of message is not supported. Please update Talvora.'
+        }));
+        return;
+      }
       const recipients = Array.isArray(msg.recipients)
         ? msg.recipients.filter(id => typeof id === 'string' && roomManager.getParticipant(id))
         : [];
@@ -597,11 +603,6 @@ wss.on('connection', (ws, req) => {
           roomManager.sendTo(targetId, chatPayload);
           ws.send(JSON.stringify(chatPayload));
         }
-      } else if (mode === ChatMode.GROUP) {
-        // Deliver to all selected recipients and echo back to sender
-        const recipientList = new Set(recipients);
-        recipientList.add(currentUser.id);
-        roomManager.sendToMultiple(Array.from(recipientList), chatPayload);
       }
       return;
     }

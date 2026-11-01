@@ -29,8 +29,7 @@ const MessageType = {
 // Chat Modes
 const ChatMode = {
   PUBLIC: 'public',
-  DIRECT: 'direct',
-  GROUP: 'group'
+  DIRECT: 'direct'
 };
 
 // Roles

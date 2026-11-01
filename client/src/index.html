@@ -192,17 +192,15 @@
               <div class="mode-seg" role="tablist" aria-label="Message type">
                 <button type="button" class="mode-seg-btn active" data-mode="public"><svg class="icon"><use href="#i-globe"/></svg>Everyone</button>
                 <button type="button" class="mode-seg-btn" data-mode="direct"><svg class="icon"><use href="#i-lock"/></svg>Direct</button>
-                <button type="button" class="mode-seg-btn" data-mode="group"><svg class="icon"><use href="#i-users"/></svg>Group</button>
               </div>
               <!-- Source of truth read by chat.js; driven by the segmented control above -->
               <select id="select-chat-mode" class="hidden" aria-hidden="true" tabindex="-1">
                 <option value="public">Public</option>
                 <option value="direct">Direct</option>
-                <option value="group">Group</option>
               </select>
             </div>
 
-            <!-- Recipient selector for Direct & Group -->
+            <!-- Recipient selector for Direct messages -->
             <div id="chat-recipients-box" class="recipients-box hidden">
               <span class="recipients-label">Send to</span>
               <div id="recipients-list" class="recipients-chips"></div>

@@ -178,8 +178,8 @@ async function runE2E() {
   assert.ok(omidReceivedSignal && omidReceivedSignal.sdp.type === 'offer', 'Signaling relay failed');
   console.log('  [PASS] Video and voice WebRTC signaling relayed cleanly through server.\n');
 
-  // STEP 7: Built-in Chat Box Modes: Public, Direct & Group (Instruction 2)
-  console.log('[E2E Step 7] Testing chat modes (Public, Direct 1-to-1, and Group)...');
+  // STEP 7: Built-in Chat Box Modes: Public & Direct (Instruction 2)
+  console.log('[E2E Step 7] Testing chat modes (Public and Direct 1-to-1)...');
   // Connect a 3rd user: Sarah
   const sarahInvite = authService.generateInviteLink({ baseUrl: SERVER_URL, targetUsername: 'Sarah' });
   const coreSarah = new ClientCore();
@@ -210,13 +210,7 @@ async function runE2E() {
   assert.ok(!adminMsgs.some(m => m.text === 'Private secret for Sarah'), 'Admin saw private 1-to-1 message!');
   console.log('  -> 7b. Direct 1-to-1 chat: Delivered strictly to Sarah; concealed from others.');
 
-  // 7c. Group Chat (Admin sends group chat to Omid and Sarah)
-  coreAdmin.sendChatMessage({ mode: ChatMode.GROUP, recipients: [omidParticipant.id, sarahParticipant.id], text: 'Group meeting' });
-  await sleep(300);
-  assert.ok(omidMsgs.some(m => m.text === 'Group meeting'), 'Group message missing for Omid');
-  assert.ok(sarahMsgs.some(m => m.text === 'Group meeting'), 'Group message missing for Sarah');
-  console.log('  -> 7c. Group chat: Delivered selectively to chosen group members.');
-  console.log('  [PASS] All 3 chat modes verified.\n');
+  console.log('  [PASS] Both chat modes verified.\n');
 
   // STEP 8: User Management Panel Real-Time Moderation & Permission Control (Instruction 4)
   console.log('[E2E Step 8] Testing Admin Web Management Panel actions and live permission revocations...');

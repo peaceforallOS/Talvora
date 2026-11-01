@@ -95,7 +95,7 @@ async function runTests() {
   const admin = await join('Admin', Role.ADMIN);
   const omid = await join('Omid');
   omid.ws.send(JSON.stringify({ type: MessageType.CHAT_SEND, mode: 'public', text: 12345 }));
-  omid.ws.send(JSON.stringify({ type: MessageType.CHAT_SEND, mode: 'group', recipients: 'abc', text: 'hi' }));
+  omid.ws.send(JSON.stringify({ type: MessageType.CHAT_SEND, mode: 'direct', recipients: 'abc', text: 'hi' }));
   omid.ws.send(JSON.stringify({ type: MessageType.MEDIA_STATE_CHANGE, mediaState: null }));
   omid.ws.send(JSON.stringify({ type: MessageType.INVITE_GENERATE, targetUsername: { a: 1 } }));
   omid.ws.send(JSON.stringify({ type: MessageType.SIGNAL, targetPeerId: admin.user.id, signal: null }));
