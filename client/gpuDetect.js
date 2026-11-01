@@ -123,8 +123,9 @@ function linuxOffloadEnv(adapters, dedicated) {
 }
 
 /**
- * { useGpu, adapter, env }: whether to draw with the GPU, the dedicated adapter found (or null),
- * and environment variables to set before the app is ready.
+ * { useGpu, adapter, hybrid, env }: whether to draw with the GPU, the dedicated adapter found (or
+ * null), whether built-in graphics sit next to it, and environment variables to set before the app
+ * is ready.
  */
 function detectGpu({ platform = process.platform, env = process.env, run = spawnSync, sysRoot, fsImpl } = {}) {
   const override = String(env.VIDEOCALL_GPU || '').toLowerCase();
@@ -138,7 +139,9 @@ function detectGpu({ platform = process.platform, env = process.env, run = spawn
   const adapter = adapters.find(isDedicated) || null;
   const useGpu = override === 'on' ? true : override === 'off' ? false : !!adapter;
   const extraEnv = useGpu && platform === 'linux' ? linuxOffloadEnv(adapters, adapter) : {};
-  return { useGpu, adapter, adapters, env: Object.fromEntries(Object.entries(extraEnv).filter(([k]) => env[k] === undefined)) };
+  // A laptop with both: built-in graphics next to the dedicated card (they drive the screen)
+  const hybrid = !!adapter && adapters.some(a => a !== adapter && ['intel', 'amd'].includes(a.vendor) && !isDedicated(a));
+  return { useGpu, adapter, adapters, hybrid, env: Object.fromEntries(Object.entries(extraEnv).filter(([k]) => env[k] === undefined)) };
 }
 
 module.exports = { detectGpu, isDedicated, parseRegValues, windowsAdapters, linuxAdapters, linuxOffloadEnv };

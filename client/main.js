@@ -51,7 +51,10 @@ if (process.platform === 'linux' && linuxSandboxUnavailable()) {
 // whose process alone holds 100-210 MB (a four-person call: 412 MB with it, 258 MB without).
 const gpu = detectGpu();
 if (gpu.useGpu) {
-  app.commandLine.appendSwitch('force_high_performance_gpu');
+  // Windows laptops with both: the screen hangs on the built-in graphics, and Windows' fast screen
+  // capture (Desktop Duplication) does not work from the dedicated card, which made screen sharing
+  // slow. There Windows keeps choosing; elsewhere ask for the dedicated card.
+  if (!(process.platform === 'win32' && gpu.hybrid)) app.commandLine.appendSwitch('force_high_performance_gpu');
   Object.assign(process.env, gpu.env); // Linux laptops: render on the dedicated card (PRIME)
 } else {
   app.disableHardwareAcceleration();
@@ -250,11 +253,13 @@ app.whenReady().then(() => {
     callback(isAppUrl(details.requestingUrl));
   });
 
-  // Electron rejects getDisplayMedia() unless a handler is set; share the primary screen, and the
-  // computer's sound when asked (Windows: system audio; Linux: the speakers' monitor via PulseAudio
-  // or PipeWire). The page removes Talvora's own playback from it with echo cancellation.
+  // Electron rejects getDisplayMedia() unless a handler is set; share the primary screen with the
+  // computer's sound. Windows leaves Talvora's own playback (the others' voices) out of it, so nobody
+  // hears themselves and no echo cancellation is needed; Linux sound systems (the speakers' monitor
+  // in PulseAudio/PipeWire) cannot, so there the page removes it with echo cancellation.
+  const SYSTEM_SOUND = { win32: 'loopbackWithoutChrome', linux: 'loopback' }[process.platform];
   session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
-    const audio = request.audioRequested && ['win32', 'linux'].includes(process.platform) ? 'loopback' : undefined;
+    const audio = request.audioRequested ? SYSTEM_SOUND : undefined;
     desktopCapturer.getSources({ types: ['screen'] })
       .then(sources => callback(sources.length ? { video: sources[0], ...(audio ? { audio } : {}) } : {}))
       .catch(() => callback({}));

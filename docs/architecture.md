@@ -147,18 +147,34 @@ Microphone audio passes through a high-pass filter and RNNoise neural noise supp
 (`client/src/vendor/rnnoise`, AudioWorklet + WebAssembly) before being sent. The speaking
 indicator uses the cleaned signal: RMS above -50 dBFS, held for 400 ms between words.
 
-**Shared sound** (screen sharing with "Share my computer's sound", on by default): the main process grants
-system audio with the screen (`audio: 'loopback'`: Windows system audio; Linux the speakers' monitor through
-PulseAudio/PipeWire). That capture also records what Talvora itself plays (the others' voices and shared sound);
-Electron 33 cannot leave its own process out, so the track is captured with echo cancellation, which removes
-Talvora's playback (measured: -49 -> -90 dB on Windows, -34 -> -87 dB on Linux) and leaves other programs'
-sound untouched; noise suppression and automatic gain stay off (they damage music), and it is mono. It never
-passes through RNNoise. It is its own track (`contentHint = 'music'`) on its own sender per connection,
-reused across shares like the video slot. Our encoder follows the codec parameters in the peer's description, so
-before applying a remote description the shared-sound m-line gets `maxaveragebitrate=128000;usedtx=0`
-(`MediaEngine.tuneRemoteSdp`): about 128 kbit/s instead of a voice bitrate, only for our own sending. Each
-description we send names that m-line (`screenAudioMid`), so the receiver plays it from a separate `<audio>`
-element on the tile (at that person's volume, through the chosen speaker) and never counts it as their voice.
+**Shared sound** (always shared with the screen when the system offers it): the main process grants system
+audio with the screen. On Windows it asks for `loopbackWithoutChrome` (Electron 45; Electron 33 ignored it): the
+capture leaves out everything Talvora itself plays (the others' voices and shared sound), measured -49 -> -110 dB
+with other programs' sound untouched, so the track needs no echo cancellation and stays stereo. Linux sound
+systems cannot leave one program out (`loopbackWithoutChrome` captures it all there, -34 dB), so on Linux the
+track keeps echo cancellation, which removes Talvora's playback (-34 -> -97 dB), and is mono. Noise suppression
+and automatic gain are always off (speech processing damages music; echo cancellation does too, which is why
+Windows now avoids it), and it never passes through RNNoise. It is its own track (`contentHint = 'music'`) on its
+own sender per connection, reused across shares like the video slot. Our encoders follow the codec parameters in
+the peer's description, so before applying a remote description (`MediaEngine.tuneRemoteSdp`) the shared-sound
+m-line gets `stereo=1;sprop-stereo=1;maxaveragebitrate=128000;usedtx=0` and our voice m-lines `stereo=0` (mono);
+our own descriptions say `stereo=1` on every audio m-line (`allowStereo`), without which the receiving decoder
+mixes a peer's shared sound down to mono (measured). The shared sound's bitrate follows the screen level below
+(`setParameters` maxBitrate, 48-128 kbit/s; verified to take effect at runtime). Each description we send names
+that m-line (`screenAudioMid`), so the receiver plays it from a separate `<audio>` element on the tile (at that
+person's volume, through the chosen speaker) and never counts it as their voice.
+
+**Screen sharing quality** adapts to each connection (`MediaEngine.adaptScreenQuality`): capture at most
+1920x1080 at 30 frames per second (`contentHint = 'detail'` for sharp text, `maxBitrate` 4 Mbit/s), then every
+2 seconds WebRTC's bandwidth estimate (`availableOutgoingBitrate`) picks a level - 1080p from 3 Mbit/s, 720p from
+1.8, 540p from 0.9, 360p from 0.45, else 270p - applied as `scaleResolutionDownBy`. Two low measurements step
+straight down to the level that fits; three measurements 25% above the next level step up one. Measured with
+motion on screen: Chromium keeps a shared screen at full resolution and drops the frame rate instead (1 Mbit/s:
+1080p 8 fps, 540p 29 fps; 500 kbit/s: 360p 22 fps), which is what made screen sharing stutter on ordinary
+connections. Over really throttled links (Linux `tc`) the levels settled at 540p for 1 Mbit/s and 360p for 500 kbit/s
+within 6 s. VP8 in software is kept: Intel's hardware H.264 encoder dropped to 6 fps at 1 Mbit/s. Stopping the
+share gives the camera its own settings back. `talvoraStats()` in the developer tools shows each connection's
+codec, resolution, frame rate, bitrate and limits.
 **Ducking** happens on the listener's side: while any participant speaks, every shared sound fades to 35% (about
 -9 dB) within about 0.15 s and returns over about 0.5 s after they stop. Peers before 1.12.0 do not name the
 m-line: they receive the shared sound as a second audio track of the person's stream.
@@ -229,7 +245,9 @@ Each user entity in the room state contains a `permissions` object (an invited u
 - Graphics card, chosen automatically at start (`client/gpuDetect.js`, before the app is ready as Electron requires):
   - **Dedicated card** (NVIDIA; AMD Radeon RX/Pro or any AMD adapter not named "... Graphics"; Intel Arc A/B): the app
     draws and decodes video on the GPU and passes `force_high_performance_gpu`, so Chromium picks the high-performance
-    adapter on laptops with two. On Linux laptops whose screen is driven by the other GPU it also sets PRIME render
+    adapter. Not on Windows laptops with both (built-in graphics next to the card): there the screen hangs on the
+    built-in graphics and Windows' fast screen capture (Desktop Duplication) does not work from the dedicated card
+    (Microsoft KB 3019314), which made screen sharing slow in 1.13.0; Windows keeps choosing the adapter there. On Linux laptops whose screen is driven by the other GPU it also sets PRIME render
     offload (`__NV_PRIME_RENDER_OFFLOAD`/`__GLX_VENDOR_LIBRARY_NAME`/`__VK_LAYER_NV_optimus` for the NVIDIA driver,
     `DRI_PRIME=1` for Mesa), unless the user set them.
   - **Integrated graphics only** (Intel, AMD Ryzen "... Graphics", Intel "Arc Graphics"): no GPU

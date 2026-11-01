@@ -41,8 +41,10 @@ Object.defineProperty(globalThis, 'navigator', { configurable: true, value: {
 } });
 global.window = {}; // no AudioContext: the microphone is used without noise suppression
 class FakeSender {
-  constructor(track) { this.track = track; }
+  constructor(track) { this.track = track; this.encoding = {}; }
   async replaceTrack(track) { this.track = track; }
+  getParameters() { return { encodings: [{ ...this.encoding }] }; }
+  async setParameters(p) { this.encoding = { ...p.encodings[0] }; }
 }
 global.RTCPeerConnection = class {
   constructor() { this.senders = []; this.addTrackCalls = 0; this.signalingState = 'stable'; }
@@ -136,7 +138,7 @@ const MediaEngine = require('../src/mediaEngine');
   assert.ok(micA.stopped, 'Leaving releases the microphone');
   console.log('✓ Test 7 Passed: Without voice permission the microphone opens only when allowed and unmuted');
 
-  // 8. Shared sound: our encoder gets a music bitrate on the shared-sound m-line only (the voice keeps its own)
+  // 8. Shared sound: our encoder gets stereo at a music bitrate on the shared-sound m-line; the voice stays mono
   const sdp = [
     'v=0', 'o=- 1 2 IN IP4 127.0.0.1', 's=-', 't=0 0',
     'm=audio 9 UDP/TLS/RTP/SAVPF 111', 'a=mid:0', 'a=rtpmap:111 opus/48000/2', 'a=fmtp:111 minptime=10;useinbandfec=1',
@@ -145,12 +147,51 @@ const MediaEngine = require('../src/mediaEngine');
   ].join('\r\n');
   const tuned = MediaEngine.tuneRemoteSdp(sdp, '2');
   const fmtps = tuned.match(/a=fmtp:111 [^\r\n]*/g);
-  assert.strictEqual(fmtps[0], 'a=fmtp:111 minptime=10;useinbandfec=1', 'The voice m-line must not change');
-  assert.ok(/maxaveragebitrate=128000/.test(fmtps[1]) && /usedtx=0/.test(fmtps[1]) && !/usedtx=1/.test(fmtps[1]), 'Shared sound not tuned: ' + fmtps[1]);
-  assert.strictEqual(MediaEngine.tuneRemoteSdp(sdp, null), sdp, 'Nothing to tune without a shared-sound m-line');
+  assert.strictEqual(fmtps[0], 'a=fmtp:111 minptime=10;useinbandfec=1;stereo=0', 'The voice stays mono at its own bitrate');
+  assert.ok(/maxaveragebitrate=128000/.test(fmtps[1]) && /usedtx=0/.test(fmtps[1]) && !/usedtx=1/.test(fmtps[1]) && /stereo=1/.test(fmtps[1]) && /sprop-stereo=1/.test(fmtps[1]), 'Shared sound not tuned: ' + fmtps[1]);
+  assert.ok(!/maxaveragebitrate/.test(MediaEngine.tuneRemoteSdp(sdp, null)), 'Without a shared-sound m-line only the voice is set (mono)');
+  // Our own descriptions accept stereo on every audio m-line (a peer's shared sound then arrives in stereo)
+  const allowed = MediaEngine.allowStereo(sdp).match(/a=fmtp:111 [^\r\n]*/g);
+  assert.ok(allowed.length === 2 && allowed.every(l => /stereo=1/.test(l)), 'Stereo not accepted: ' + allowed);
+  const videoSection = MediaEngine.allowStereo(sdp).split('m=video')[1].split('m=audio')[0];
+  assert.ok(!/stereo/.test(videoSection), 'Video m-lines untouched');
   const bare = sdp.replace('a=fmtp:111 minptime=10;useinbandfec=1;usedtx=1\r\n', '');
   assert.ok(/a=rtpmap:111 opus\/48000\/2\r\na=fmtp:111 maxaveragebitrate=128000/.test(MediaEngine.tuneRemoteSdp(bare, '2')), 'Missing fmtp line not added');
   console.log('✓ Test 8 Passed: Shared sound gets a music bitrate; the voice is left alone');
+
+  // 9. Screen-sharing quality follows the measured bandwidth: down after two low measurements (straight
+  // to the level that fits), up one level after three comfortably higher ones
+  const sharer = new MediaEngine();
+  await sharer.initLocalMedia({ audio: false });
+  const link = sharer.createPeerConnection('viewer', true);
+  link.connectionState = 'connected';
+  const screenTrack = new FakeTrack('video', 'screen');
+  screenTrack.getSettings = () => ({ height: 1080 });
+  sharer.screenStream = new MediaStream([screenTrack]);
+  sharer.screenLevels = new WeakMap();
+  await sharer.sendVideo(link, screenTrack);
+  const soundTrack = new FakeTrack('audio', 'system sound');
+  sharer.screenAudioTrack = soundTrack;
+  await sharer.sendScreenAudio(link, soundTrack);
+  let bandwidth = 5000;
+  sharer.availableKbps = async () => bandwidth;
+  const level = () => sharer.screenLevelsNow().viewer;
+  const step = async (kbps, times = 1) => { bandwidth = kbps; for (let i = 0; i < times; i++) await sharer.adaptScreenQuality(); return level(); };
+  assert.strictEqual(level(), undefined);
+  assert.strictEqual(await step(5000), 720, 'Starts at 720p until measured; one good measurement is not enough');
+  assert.strictEqual(await step(5000, 2), 1080, 'Up after three good measurements');
+  const video = link.getSenders().find(x => x.track === screenTrack);
+  assert.deepStrictEqual([video.encoding.scaleResolutionDownBy, video.encoding.maxBitrate, video.encoding.maxFramerate], [1, 4000000, 30]);
+  assert.strictEqual(await step(1000), 1080, 'One low measurement is not enough to step down');
+  assert.strictEqual(await step(1000), 540, 'Two low measurements: straight to the level that fits');
+  assert.strictEqual(video.encoding.scaleResolutionDownBy, 2, '540p from a 1080p screen');
+  assert.strictEqual(link.getSenders().find(x => x.track === soundTrack).encoding.maxBitrate, 96000, 'The shared sound follows the level');
+  assert.strictEqual(await step(2000, 3), 540, 'Up needs a margin above the next level (1800 x 1.25)');
+  assert.strictEqual(await step(2300, 3), 720, 'Up one level with the margin');
+  assert.strictEqual(await step(300, 2), 270, 'A very slow link: the lowest level');
+  assert.strictEqual(await step(99999, 30), 1080, 'Never above 1080p');
+  sharer.destroy();
+  console.log('✓ Test 9 Passed: Screen-sharing quality follows the measured bandwidth, without flickering');
 
   console.log('\n========================================');
   console.log(' ALL CAMERA TESTS PASSED!               ');

@@ -469,8 +469,6 @@ input[type="file"]::file-selector-button {
 .link-button:focus-visible { outline: none; box-shadow: var(--ring); }
 .link-button .icon { width: 15px; height: 15px; }
 
-.check-row { display: flex; align-items: center; gap: 0.6rem; cursor: pointer; }
-.check-row input[type="checkbox"] { width: 17px; height: 17px; margin: 0; accent-color: var(--accent); cursor: pointer; }
 
 /* Server calculator */
 .modal-card.modal-card-wide { max-width: 820px; }

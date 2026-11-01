@@ -32,6 +32,8 @@ const INTEL = { name: 'Intel(R) UHD Graphics', id: 'PCI\\VEN_8086&DEV_9A78&SUBSY
 assert.strictEqual(win([INTEL]).useGpu, false, 'Integrated Intel graphics alone: no GPU');
 const hybrid = win([INTEL, { name: 'NVIDIA GeForce RTX 3050 Laptop GPU', id: 'PCI\\VEN_10DE&DEV_25A2&SUBSYS_15CC1043' }]);
 assert.ok(hybrid.useGpu && hybrid.adapter.vendor === 'nvidia', 'Laptop with an NVIDIA card: use it');
+assert.strictEqual(hybrid.hybrid, true, 'Built-in graphics next to the card: a hybrid laptop (Windows keeps choosing the GPU)');
+assert.strictEqual(win([{ name: 'NVIDIA GeForce RTX 4070', id: 'PCI\VEN_10DE&DEV_2786' }]).hybrid, false, 'A desktop with only the card is not hybrid');
 assert.strictEqual(win([{ name: 'AMD Radeon(TM) Graphics', id: 'PCI\\VEN_1002&DEV_1638', memory: '0x20000000' }]).useGpu, false, 'Ryzen integrated graphics: no GPU');
 assert.strictEqual(win([{ name: 'AMD Radeon 780M Graphics', id: 'PCI\\VEN_1002&DEV_15BF', memory: '0x80000000' }]).useGpu, false, 'Radeon 780M is integrated');
 assert.ok(win([{ name: 'AMD Radeon RX 6600', id: 'PCI\\VEN_1002&DEV_73FF', memory: '0x200000000' }]).useGpu, 'Radeon RX card: use it');

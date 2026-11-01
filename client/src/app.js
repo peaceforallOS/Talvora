@@ -78,7 +78,7 @@
 
   // Saved settings this version uses; any other vc_ setting was left by an older version and is removed.
   // A new saved setting must be added here.
-  const SAVED_SETTINGS = ['vc_network_dismissed', 'vc_peer_volume', 'vc_devices', 'vc_server_history', 'vc_share_sound'];
+  const SAVED_SETTINGS = ['vc_network_dismissed', 'vc_peer_volume', 'vc_devices', 'vc_server_history'];
   try {
     for (const key of Object.keys(localStorage)) {
       if (key.startsWith('vc_') && !SAVED_SETTINGS.includes(key)) localStorage.removeItem(key);
@@ -117,6 +117,9 @@
       clientCore.sendMediaState({ screen: false });
     }
   });
+
+  // Call quality at a glance, from the developer tools console: await talvoraStats()
+  window.talvoraStats = () => mediaEngine.collectStats();
 
   clientCore = new ClientCore({
     mediaEngine,
@@ -901,7 +904,7 @@
   btnShareScreen.addEventListener('click', async () => {
     if (!isScreenSharing) {
       if (btnShareScreen.disabled) return;
-      const stream = await mediaEngine.startScreenShare({ audio: shareSoundSetting() });
+      const stream = await mediaEngine.startScreenShare();
       // Video was taken away while the picker was open
       if (stream && btnShareScreen.disabled) {
         mediaEngine.stopScreenShare();
@@ -1160,26 +1163,6 @@
       populateDeviceList();
     });
   }
-
-  // Sharing the computer's sound with the screen: on unless turned off (remembered on this computer)
-  const SHARE_SOUND_KEY = 'vc_share_sound';
-  const toggleShareSound = document.getElementById('toggle-share-sound');
-  function shareSoundSetting() {
-    try {
-      return localStorage.getItem(SHARE_SOUND_KEY) !== 'off';
-    } catch (e) {
-      return true;
-    }
-  }
-  toggleShareSound.checked = shareSoundSetting();
-  toggleShareSound.addEventListener('change', () => {
-    try {
-      localStorage.setItem(SHARE_SOUND_KEY, toggleShareSound.checked ? 'on' : 'off');
-    } catch (e) {
-      // only means the choice is not remembered next time
-    }
-    if (isScreenSharing) showToast('Applies the next time you share your screen.');
-  });
 
   if (btnCloseSettings) {
     btnCloseSettings.addEventListener('click', () => {
