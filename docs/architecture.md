@@ -147,6 +147,22 @@ Microphone audio passes through a high-pass filter and RNNoise neural noise supp
 (`client/src/vendor/rnnoise`, AudioWorklet + WebAssembly) before being sent. The speaking
 indicator uses the cleaned signal: RMS above -50 dBFS, held for 400 ms between words.
 
+**Shared sound** (screen sharing with "Share my computer's sound", on by default): the main process grants
+system audio with the screen (`audio: 'loopback'`: Windows system audio; Linux the speakers' monitor through
+PulseAudio/PipeWire). That capture also records what Talvora itself plays (the others' voices and shared sound);
+Electron 33 cannot leave its own process out, so the track is captured with echo cancellation, which removes
+Talvora's playback (measured: -49 -> -90 dB on Windows, -34 -> -87 dB on Linux) and leaves other programs'
+sound untouched; noise suppression and automatic gain stay off (they damage music), and it is mono. It never
+passes through RNNoise. It is its own track (`contentHint = 'music'`) on its own sender per connection,
+reused across shares like the video slot. Our encoder follows the codec parameters in the peer's description, so
+before applying a remote description the shared-sound m-line gets `maxaveragebitrate=128000;usedtx=0`
+(`MediaEngine.tuneRemoteSdp`): about 128 kbit/s instead of a voice bitrate, only for our own sending. Each
+description we send names that m-line (`screenAudioMid`), so the receiver plays it from a separate `<audio>`
+element on the tile (at that person's volume, through the chosen speaker) and never counts it as their voice.
+**Ducking** happens on the listener's side: while any participant speaks, every shared sound fades to 35% (about
+-9 dB) within about 0.15 s and returns over about 0.5 s after they stop. Peers before 1.12.0 do not name the
+m-line: they receive the shared sound as a second audio track of the person's stream.
+
 ### 3.1 Signaling Message Schema
 
 #### Client -> Server Messages

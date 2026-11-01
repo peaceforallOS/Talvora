@@ -14,6 +14,12 @@ const METER_FLOOR_DB = -65;
 const METER_CEILING_DB = -15;
 
 const AUDIO_CONSTRAINTS = { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1, sampleRate: AUDIO_SAMPLE_RATE };
+// The computer's sound shared with the screen: its own track, never through the microphone's noise
+// suppression. Echo cancellation stays on: the capture also records what Talvora itself plays (the
+// others' voices and shared sound), which it removes, so nobody hears themselves; noise suppression and
+// automatic gain would damage music. Sent at a music bitrate, without silence suppression.
+const SCREEN_AUDIO_CONSTRAINTS = { echoCancellation: true, noiseSuppression: false, autoGainControl: false };
+const SCREEN_AUDIO_OPUS = { maxaveragebitrate: 128000, usedtx: 0, useinbandfec: 1 };
 const VIDEO_CONSTRAINTS = { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { max: 30 } };
 
 // Tracks how loud a signal is and whether someone is talking on it
@@ -54,9 +60,14 @@ class MediaEngine {
     this.onPeerSpeaking = options.onPeerSpeaking || (() => {});
     this.onSendSignal = options.onSendSignal || (() => {});
     this.onScreenShareEnded = options.onScreenShareEnded || (() => {});
+    this.onRemoteScreenAudio = options.onRemoteScreenAudio || (() => {}); // (peerId, track | null)
 
     this.localStream = null;
     this.screenStream = null;
+    this.screenAudioTrack = null; // the computer's sound while sharing the screen
+    this.screenAudioStream = new MediaStream(); // its own stream id, apart from the microphone's
+    this.screenAudioSenders = new WeakMap(); // RTCPeerConnection -> the sender of our shared sound
+    this.remoteScreenAudio = new Map(); // peerId -> that peer's shared sound (played apart from their voice)
     this.peerConnections = new Map(); // peerId -> RTCPeerConnection
     this.videoSenders = new WeakMap(); // RTCPeerConnection -> the sender of our one outgoing video (camera or screen)
     this.negotiation = new Map(); // peerId -> { polite, makingOffer, ignoreOffer, queue }
@@ -146,6 +157,77 @@ class MediaEngine {
     if (audio && !pc.getSenders().some(s => s.track === audio)) pc.addTrack(audio, this.localStream);
     const video = this.screenStream?.getVideoTracks()[0] || this.localStream?.getVideoTracks()[0] || null;
     if (video) this.sendVideo(pc, video);
+    if (this.screenAudioTrack) this.sendScreenAudio(pc, this.screenAudioTrack);
+  }
+
+  /**
+   * Send the computer's sound (or null for nothing) on this connection's shared-sound slot: the first
+   * share adds the sender (one negotiation), later shares reuse it, like the video slot.
+   */
+  sendScreenAudio(pc, track) {
+    if (pc.signalingState === 'closed') return Promise.resolve();
+    const sender = this.screenAudioSenders.get(pc);
+    if (sender && pc.getSenders().includes(sender)) {
+      if (sender.track === track) return Promise.resolve();
+      return sender.replaceTrack(track).catch(e => console.warn('Cannot change the shared sound:', e));
+    }
+    if (track) this.screenAudioSenders.set(pc, pc.addTrack(track, this.screenAudioStream));
+    return Promise.resolve();
+  }
+
+  // The m-line (mid) of our shared sound on this connection, once negotiated; told to the peer with
+  // every description so it plays that track apart from our voice
+  screenAudioMid(pc) {
+    const sender = this.screenAudioSenders.get(pc);
+    if (!sender || !pc.getTransceivers) return null;
+    const transceiver = pc.getTransceivers().find(t => t.sender === sender);
+    return (transceiver && transceiver.mid) || null;
+  }
+
+  /**
+   * Our encoder follows the codec parameters in the peer's description: for the shared-sound m-line,
+   * ask for a music bitrate without silence suppression. Only our own sending is affected.
+   */
+  static tuneRemoteSdp(sdp, mid, params = SCREEN_AUDIO_OPUS) {
+    if (!mid || typeof sdp !== 'string') return sdp;
+    const sections = sdp.split(/(?=\r?\nm=)/);
+    return sections.map(section => {
+      if (!new RegExp(`\\r?\\na=mid:${mid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\r?\\n|$)`).test(section)) return section;
+      const opus = section.match(/a=rtpmap:(\d+) opus\/48000[^\r\n]*/i);
+      if (!opus) return section;
+      const fmtp = new RegExp(`(a=fmtp:${opus[1]} )([^\\r\\n]*)`);
+      const merge = existing => {
+        const values = new Map(existing.split(';').map(p => p.trim()).filter(Boolean).map(p => p.split('=')));
+        for (const [key, value] of Object.entries(params)) values.set(key, String(value));
+        return [...values].map(([k, v]) => (v === undefined ? k : `${k}=${v}`)).join(';');
+      };
+      if (fmtp.test(section)) return section.replace(fmtp, (m, head, existing) => head + merge(existing));
+      const eol = section.includes('\r\n') ? '\r\n' : '\n';
+      return section.replace(opus[0], `${opus[0]}${eol}a=fmtp:${opus[1]} ${merge('')}`);
+    }).join('');
+  }
+
+  // A peer's shared sound arrived (or ended): played on its own, never counted as their voice
+  setRemoteScreenAudio(peerId, track) {
+    const remoteStream = this.remoteStreams.get(peerId);
+    if (track && remoteStream && remoteStream.getTracks().includes(track)) {
+      remoteStream.removeTrack(track);
+      if (this.peerDetectors.get(peerId)?.track === track) {
+        this.unwatchPeerAudio(peerId);
+        this.watchPeerAudio(peerId, remoteStream);
+      }
+    }
+    if ((this.remoteScreenAudio.get(peerId) || null) === track) return;
+    if (track) this.remoteScreenAudio.set(peerId, track);
+    else this.remoteScreenAudio.delete(peerId);
+    this.onRemoteScreenAudio(peerId, track);
+  }
+
+  // The peer told us which m-line carries its shared sound: sort its audio tracks accordingly
+  sortRemoteAudio(peerId, pc, mid) {
+    const transceiver = mid && pc.getTransceivers ? pc.getTransceivers().find(t => t.mid === mid) : null;
+    const track = transceiver?.receiver?.track;
+    if (track && track.kind === 'audio') this.setRemoteScreenAudio(peerId, track);
   }
 
   /**
@@ -465,12 +547,16 @@ class MediaEngine {
     return track;
   }
 
-  async startScreenShare() {
+  /**
+   * Share the screen, and with `audio` the computer's sound, which the main process grants with the
+   * screen (Windows: system audio; Linux: the speakers' monitor in PulseAudio/PipeWire).
+   */
+  async startScreenShare({ audio = false } = {}) {
     if (this.screenStream) return this.screenStream;
     try {
       this.screenStream = await navigator.mediaDevices.getDisplayMedia({
         video: { cursor: 'always' },
-        audio: false
+        audio: audio ? SCREEN_AUDIO_CONSTRAINTS : false
       });
 
       const screenTrack = this.screenStream.getVideoTracks()[0];
@@ -484,6 +570,15 @@ class MediaEngine {
         this.sendVideo(pc, screenTrack);
       }
 
+      if (audio) {
+        const shared = this.screenStream.getAudioTracks()[0];
+        if (shared) {
+          shared.contentHint = 'music';
+          this.screenAudioTrack = shared;
+          for (const pc of this.peerConnections.values()) this.sendScreenAudio(pc, shared);
+        }
+      }
+
       return this.screenStream;
     } catch (err) {
       console.warn('Screen share cancelled or failed:', err);
@@ -491,11 +586,22 @@ class MediaEngine {
     }
   }
 
+  get sharingAudio() {
+    return !!this.screenAudioTrack;
+  }
+
   stopScreenShare() {
     if (!this.screenStream) return;
     const screenTrack = this.screenStream.getVideoTracks()[0];
     this.screenStream.getTracks().forEach(t => t.stop());
     this.screenStream = null;
+    if (this.screenAudioTrack) {
+      this.screenAudioTrack.stop();
+      this.screenAudioTrack = null;
+      for (const pc of this.peerConnections.values()) {
+        if (this.screenAudioSenders.get(pc)?.track) this.sendScreenAudio(pc, null);
+      }
+    }
 
     // Back to the camera, or to no video when the camera is off
     const camTrack = this.localStream?.getVideoTracks()[0] || null;
@@ -520,8 +626,16 @@ class MediaEngine {
     this.peerConnections.set(peerId, pc);
     this.negotiation.set(peerId, state);
 
-    // Handle remote media tracks: aggregate all of a peer's tracks in one stream
+    // Handle remote media tracks: aggregate all of a peer's tracks in one stream; their shared
+    // sound (the m-line they told us about) is kept apart from their voice
     pc.ontrack = event => {
+      if (event.track.kind === 'audio' && state.remoteScreenAudioMid && event.transceiver?.mid === state.remoteScreenAudioMid) {
+        this.setRemoteScreenAudio(peerId, event.track);
+        event.track.addEventListener('ended', () => {
+          if (this.remoteScreenAudio.get(peerId) === event.track) this.setRemoteScreenAudio(peerId, null);
+        });
+        return;
+      }
       let remoteStream = this.remoteStreams.get(peerId);
       if (!remoteStream) {
         remoteStream = new MediaStream();
@@ -560,7 +674,7 @@ class MediaEngine {
       try {
         state.makingOffer = true;
         await pc.setLocalDescription();
-        this.onSendSignal(peerId, { sdp: pc.localDescription });
+        this.onSendSignal(peerId, { sdp: pc.localDescription, screenAudioMid: this.screenAudioMid(pc) });
       } catch (err) {
         console.error('Error creating SDP offer:', err);
       } finally {
@@ -596,10 +710,14 @@ class MediaEngine {
         state.ignoreOffer = !state.polite && offerCollision;
         if (state.ignoreOffer) return;
 
-        await pc.setRemoteDescription(signal.sdp);
+        // Which of the peer's m-lines is its shared sound (peers before 1.12.0 do not say)
+        if ('screenAudioMid' in signal) state.remoteScreenAudioMid = signal.screenAudioMid || null;
+        const sdp = MediaEngine.tuneRemoteSdp(signal.sdp.sdp, this.screenAudioMid(pc));
+        await pc.setRemoteDescription({ type: signal.sdp.type, sdp });
+        this.sortRemoteAudio(peerId, pc, state.remoteScreenAudioMid);
         if (signal.sdp.type === 'offer') {
           await pc.setLocalDescription();
-          this.onSendSignal(peerId, { sdp: pc.localDescription });
+          this.onSendSignal(peerId, { sdp: pc.localDescription, screenAudioMid: this.screenAudioMid(pc) });
         }
       } else if (signal.candidate) {
         try {
@@ -623,6 +741,7 @@ class MediaEngine {
     this.negotiation.delete(peerId);
     this.remoteStreams.delete(peerId);
     this.unwatchPeerAudio(peerId);
+    if (this.remoteScreenAudio.has(peerId)) this.setRemoteScreenAudio(peerId, null);
   }
 
   destroy() {
@@ -649,6 +768,10 @@ class MediaEngine {
       this.screenStream.getTracks().forEach(t => t.stop());
       this.screenStream = null;
     }
+    if (this.screenAudioTrack) this.screenAudioTrack.stop();
+    this.screenAudioTrack = null;
+    this.screenAudioSenders = new WeakMap();
+    for (const peerId of [...this.remoteScreenAudio.keys()]) this.setRemoteScreenAudio(peerId, null);
     for (const pc of this.peerConnections.values()) {
       pc.close();
     }

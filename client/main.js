@@ -271,10 +271,13 @@ app.whenReady().then(() => {
     callback(isAppUrl(details.requestingUrl));
   });
 
-  // Electron rejects getDisplayMedia() unless a handler is set; share the primary screen
+  // Electron rejects getDisplayMedia() unless a handler is set; share the primary screen, and the
+  // computer's sound when asked (Windows: system audio; Linux: the speakers' monitor via PulseAudio
+  // or PipeWire). The page removes Talvora's own playback from it with echo cancellation.
   session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+    const audio = request.audioRequested && ['win32', 'linux'].includes(process.platform) ? 'loopback' : undefined;
     desktopCapturer.getSources({ types: ['screen'] })
-      .then(sources => callback(sources.length ? { video: sources[0] } : {}))
+      .then(sources => callback(sources.length ? { video: sources[0], ...(audio ? { audio } : {}) } : {}))
       .catch(() => callback({}));
   });
 

@@ -78,7 +78,7 @@
 
   // Saved settings this version uses; any other vc_ setting was left by an older version and is removed.
   // A new saved setting must be added here.
-  const SAVED_SETTINGS = ['vc_network_dismissed', 'vc_peer_volume', 'vc_devices', 'vc_server_history'];
+  const SAVED_SETTINGS = ['vc_network_dismissed', 'vc_peer_volume', 'vc_devices', 'vc_server_history', 'vc_share_sound'];
   try {
     for (const key of Object.keys(localStorage)) {
       if (key.startsWith('vc_') && !SAVED_SETTINGS.includes(key)) localStorage.removeItem(key);
@@ -98,6 +98,11 @@
     onPeerSpeaking: (peerId, speaking) => {
       const ring = document.querySelector(`#peer-tile-${CSS.escape(peerId)} .speaking-ring`);
       if (ring) ring.classList.toggle('hidden', !speaking);
+      if (speaking) speakingPeers.add(peerId);
+      else speakingPeers.delete(peerId);
+    },
+    onRemoteScreenAudio: (peerId, track) => {
+      handleRemoteScreenAudio(peerId, track);
     },
     onSendSignal: (targetPeerId, signal) => {
       clientCore.send({
@@ -699,6 +704,7 @@
 
     const show = (percent, save) => {
       video.volume = percent / 100;
+      applyScreenAudioVolume(tile);
       slider.value = String(percent);
       value.textContent = `${percent}%`;
       button.innerHTML = iconSvg(percent === 0 ? 'volume-off' : 'volume');
@@ -721,6 +727,54 @@
       show(current > 0 ? 0 : beforeMute || 100, true);
     });
   }
+
+  // --- Shared sound: each person's screen-share sound plays apart from their voice, at their
+  // volume, and is lowered while anyone speaks (ducking), then rises back when they stop.
+  const DUCKED_VOLUME = 0.35; // about -9 dB: clearly lower, still easy to hear
+  const DUCK_DOWN_PER_SECOND = 4; // fades down within about a sixth of a second when someone speaks
+  const DUCK_UP_PER_SECOND = 1.2; // and back up over about half a second after they stop
+  const speakingPeers = new Set();
+  let duckLevel = 1;
+  let lastDuckTick = performance.now();
+
+  function handleRemoteScreenAudio(peerId, track) {
+    const tile = track ? ensurePeerTile(peerId) : document.getElementById(`peer-tile-${peerId}`);
+    if (!tile) return;
+    let audio = tile.querySelector('audio.screen-audio');
+    if (!track) {
+      if (audio) audio.srcObject = null;
+      return;
+    }
+    if (!audio) {
+      audio = document.createElement('audio');
+      audio.className = 'screen-audio';
+      audio.autoplay = true;
+      tile.appendChild(audio);
+      applySpeaker(audio);
+    }
+    audio.srcObject = new MediaStream([track]);
+    applyScreenAudioVolume(tile);
+    audio.play().catch(() => {}); // autoplay is allowed in the app; a browser may need a click first
+  }
+
+  function applyScreenAudioVolume(tile) {
+    const audio = tile.querySelector('audio.screen-audio');
+    if (!audio) return;
+    const personal = Number(tile.querySelector('.tile-volume-slider')?.value ?? 100) / 100;
+    audio.volume = Math.min(1, Math.max(0, personal * duckLevel));
+  }
+
+  setInterval(() => {
+    const now = performance.now();
+    const seconds = Math.min(0.2, (now - lastDuckTick) / 1000);
+    lastDuckTick = now;
+    const target = speakingPeers.size ? DUCKED_VOLUME : 1;
+    if (duckLevel === target) return;
+    duckLevel = target < duckLevel
+      ? Math.max(target, duckLevel - DUCK_DOWN_PER_SECOND * seconds)
+      : Math.min(target, duckLevel + DUCK_UP_PER_SECOND * seconds);
+    videoGrid.querySelectorAll('.peer-tile').forEach(applyScreenAudioVolume);
+  }, 40);
 
   function handleRemoteTrack(peerId, stream, track) {
     const tile = ensurePeerTile(peerId);
@@ -745,6 +799,7 @@
   function removePeerVideoTile(peerId) {
     const tile = document.getElementById(`peer-tile-${peerId}`);
     if (tile) tile.remove();
+    speakingPeers.delete(peerId);
     updateGridLayout();
   }
 
@@ -846,7 +901,7 @@
   btnShareScreen.addEventListener('click', async () => {
     if (!isScreenSharing) {
       if (btnShareScreen.disabled) return;
-      const stream = await mediaEngine.startScreenShare();
+      const stream = await mediaEngine.startScreenShare({ audio: shareSoundSetting() });
       // Video was taken away while the picker was open
       if (stream && btnShareScreen.disabled) {
         mediaEngine.stopScreenShare();
@@ -941,6 +996,7 @@
     setMicMutedUI(true);
     setCamOffUI(true);
     chatController.reset();
+    speakingPeers.clear();
     [modalInvite, modalSettings].forEach(m => m?.classList.add('hidden'));
   }
 
@@ -1068,7 +1124,7 @@
     return element.setSinkId(speakerId === 'default' ? '' : speakerId).catch(e => console.warn('Cannot use this speaker:', e));
   }
   function applySpeakerEverywhere() {
-    return Promise.all([...videoGrid.querySelectorAll('.peer-tile video')].map(applySpeaker));
+    return Promise.all([...videoGrid.querySelectorAll('.peer-tile video, .peer-tile audio.screen-audio')].map(applySpeaker));
   }
 
   async function switchDevice(select, kind) {
@@ -1105,6 +1161,26 @@
       showGraphicsSetting();
     });
   }
+
+  // Sharing the computer's sound with the screen: on unless turned off (remembered on this computer)
+  const SHARE_SOUND_KEY = 'vc_share_sound';
+  const toggleShareSound = document.getElementById('toggle-share-sound');
+  function shareSoundSetting() {
+    try {
+      return localStorage.getItem(SHARE_SOUND_KEY) !== 'off';
+    } catch (e) {
+      return true;
+    }
+  }
+  toggleShareSound.checked = shareSoundSetting();
+  toggleShareSound.addEventListener('change', () => {
+    try {
+      localStorage.setItem(SHARE_SOUND_KEY, toggleShareSound.checked ? 'on' : 'off');
+    } catch (e) {
+      // only means the choice is not remembered next time
+    }
+    if (isScreenSharing) showToast('Applies the next time you share your screen.');
+  });
 
   // Graphics card (desktop app only): off by default to save memory; a change applies at the next start
   const graphicsSetting = document.getElementById('graphics-setting');

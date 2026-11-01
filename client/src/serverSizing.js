@@ -26,6 +26,7 @@ const SIZING = {
   audioMbps: 0.05, // Opus voice incl. packet overhead
   audioPps: 50, // one voice packet every 20 ms
   screenMbps: 1.5,
+  screenAudioMbps: 0.14, // the computer's sound shared with the screen: Opus at 128 kbit/s incl. overhead
   packetBytes: 1100, // typical video packet
   relayPpsPerCore: 60000, // estimate: packets per second the relay (JavaScript) forwards on one core
   // Full mesh: every participant keeps a connection to every other one
@@ -88,10 +89,10 @@ function estimateServer(input) {
 
   // Media: every sender sends to every other participant; the relayed share passes through the server
   const relayedShare = network.relay;
-  const mediaMbps = n * peers * SIZING.audioMbps + cameras * peers * quality.mbps + screens * peers * SIZING.screenMbps;
+  const mediaMbps = n * peers * SIZING.audioMbps + cameras * peers * quality.mbps + screens * peers * (SIZING.screenMbps + SIZING.screenAudioMbps);
   const relayMbps = relayedShare * mediaMbps; // each way through the server
   const videoPps = mbps => (mbps * 1e6) / 8 / SIZING.packetBytes;
-  const relayPps = relayedShare * (n * peers * SIZING.audioPps + cameras * peers * videoPps(quality.mbps) + screens * peers * videoPps(SIZING.screenMbps));
+  const relayPps = relayedShare * (n * peers * SIZING.audioPps + cameras * peers * videoPps(quality.mbps) + screens * peers * (videoPps(SIZING.screenMbps) + SIZING.audioPps));
 
   // Signaling (measured)
   const signalingMbps = (SIZING.messagesPerSecond(n) * SIZING.messageBytes * 8) / 1e6;
@@ -118,8 +119,8 @@ function estimateServer(input) {
   const vcpu = corePct <= 30 ? 1 : 2;
 
   // What each participant's own connection needs (full mesh: one stream to and from every peer)
-  const senderUploadMbps = peers * (SIZING.audioMbps + (cameras ? quality.mbps : 0)) + (screens ? peers * SIZING.screenMbps : 0);
-  const downloadPerPersonMbps = peers * SIZING.audioMbps + Math.min(cameras, peers) * quality.mbps + Math.min(screens, peers) * SIZING.screenMbps;
+  const senderUploadMbps = peers * (SIZING.audioMbps + (cameras ? quality.mbps : 0)) + (screens ? peers * (SIZING.screenMbps + SIZING.screenAudioMbps) : 0);
+  const downloadPerPersonMbps = peers * SIZING.audioMbps + Math.min(cameras, peers) * quality.mbps + Math.min(screens, peers) * (SIZING.screenMbps + SIZING.screenAudioMbps);
   const meshOk = peers <= SIZING.meshPeersMax && cameras <= SIZING.meshCamerasMax;
   const fits = meshOk && corePct <= 85 && n <= SIZING.testedUsers;
 

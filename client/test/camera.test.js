@@ -135,6 +135,23 @@ const MediaEngine = require('../src/mediaEngine');
   quiet.destroy();
   assert.ok(micA.stopped, 'Leaving releases the microphone');
   console.log('✓ Test 7 Passed: Without voice permission the microphone opens only when allowed and unmuted');
+
+  // 8. Shared sound: our encoder gets a music bitrate on the shared-sound m-line only (the voice keeps its own)
+  const sdp = [
+    'v=0', 'o=- 1 2 IN IP4 127.0.0.1', 's=-', 't=0 0',
+    'm=audio 9 UDP/TLS/RTP/SAVPF 111', 'a=mid:0', 'a=rtpmap:111 opus/48000/2', 'a=fmtp:111 minptime=10;useinbandfec=1',
+    'm=video 9 UDP/TLS/RTP/SAVPF 96', 'a=mid:1', 'a=rtpmap:96 VP8/90000',
+    'm=audio 9 UDP/TLS/RTP/SAVPF 111', 'a=mid:2', 'a=rtpmap:111 opus/48000/2', 'a=fmtp:111 minptime=10;useinbandfec=1;usedtx=1', ''
+  ].join('\r\n');
+  const tuned = MediaEngine.tuneRemoteSdp(sdp, '2');
+  const fmtps = tuned.match(/a=fmtp:111 [^\r\n]*/g);
+  assert.strictEqual(fmtps[0], 'a=fmtp:111 minptime=10;useinbandfec=1', 'The voice m-line must not change');
+  assert.ok(/maxaveragebitrate=128000/.test(fmtps[1]) && /usedtx=0/.test(fmtps[1]) && !/usedtx=1/.test(fmtps[1]), 'Shared sound not tuned: ' + fmtps[1]);
+  assert.strictEqual(MediaEngine.tuneRemoteSdp(sdp, null), sdp, 'Nothing to tune without a shared-sound m-line');
+  const bare = sdp.replace('a=fmtp:111 minptime=10;useinbandfec=1;usedtx=1\r\n', '');
+  assert.ok(/a=rtpmap:111 opus\/48000\/2\r\na=fmtp:111 maxaveragebitrate=128000/.test(MediaEngine.tuneRemoteSdp(bare, '2')), 'Missing fmtp line not added');
+  console.log('✓ Test 8 Passed: Shared sound gets a music bitrate; the voice is left alone');
+
   console.log('\n========================================');
   console.log(' ALL CAMERA TESTS PASSED!               ');
   console.log('========================================');
