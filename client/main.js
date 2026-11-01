@@ -10,6 +10,7 @@ const { X509Certificate } = require('crypto');
 const { integrateAppImage } = require('./linuxIntegration');
 const firewall = require('./firewall');
 const updater = require('./updater');
+const { detectGpu } = require('./gpuDetect');
 const net = require('net');
 
 let mainWindow = null;
@@ -44,19 +45,19 @@ if (process.platform === 'linux' && linuxSandboxUnavailable()) {
   app.commandLine.appendSwitch('no-sandbox');
 }
 
-// Drawn without the graphics card unless the user turned it on (Devices settings). Its process
-// alone holds 100-210 MB: in a four-person call 412 MB with it, 258 MB without, at about the same
-// CPU use. Read before the app is ready, as Electron requires; a change applies at the next start.
-const DISPLAY_SETTINGS_FILE = path.join(app.getPath('userData'), 'display.json');
-function readDisplaySettings() {
-  try {
-    return JSON.parse(fs.readFileSync(DISPLAY_SETTINGS_FILE, 'utf8')) || {};
-  } catch (e) {
-    return {};
-  }
+// The graphics card, chosen automatically before the app is ready (as Electron requires): with a
+// dedicated card (NVIDIA, AMD, Intel Arc) Talvora draws and decodes video on it, asking for the
+// high-performance GPU (laptops with two); with only integrated graphics it draws without the GPU,
+// whose process alone holds 100-210 MB (a four-person call: 412 MB with it, 258 MB without).
+const gpu = detectGpu();
+if (gpu.useGpu) {
+  app.commandLine.appendSwitch('force_high_performance_gpu');
+  Object.assign(process.env, gpu.env); // Linux laptops: render on the dedicated card (PRIME)
+} else {
+  app.disableHardwareAcceleration();
 }
-const useGraphicsCard = readDisplaySettings().useGraphicsCard === true;
-if (!useGraphicsCard) app.disableHardwareAcceleration();
+// Versions 1.8-1.12 had a manual "Use the graphics card" setting; it is automatic now
+fs.rm(path.join(app.getPath('userData'), 'display.json'), { force: true }, () => {});
 
 // Expose real LAN addresses as ICE candidates instead of random .local mDNS names:
 // Linux machines without avahi cannot resolve Windows' mDNS names (and vice versa),
@@ -146,28 +147,6 @@ ipcMain.handle('trust-server-certificate', (event, origin, fingerprint) => {
   } catch (e) {
     return 'invalid';
   }
-});
-
-// --- Graphics card setting: { saved: what applies from the next start, active: what runs now } ---
-ipcMain.handle('graphics-setting', event => {
-  if (!event.senderFrame || !isAppUrl(event.senderFrame.url)) return null;
-  return { saved: readDisplaySettings().useGraphicsCard === true, active: useGraphicsCard };
-});
-
-ipcMain.handle('set-graphics-setting', (event, on) => {
-  if (!event.senderFrame || !isAppUrl(event.senderFrame.url) || typeof on !== 'boolean') return false;
-  try {
-    fs.writeFileSync(DISPLAY_SETTINGS_FILE, JSON.stringify({ ...readDisplaySettings(), useGraphicsCard: on }));
-    return true;
-  } catch (e) {
-    return false;
-  }
-});
-
-ipcMain.handle('restart-app', event => {
-  if (!event.senderFrame || !isAppUrl(event.senderFrame.url)) return;
-  app.relaunch();
-  app.exit(0);
 });
 
 // --- This computer's firewall (see firewall.js) ---

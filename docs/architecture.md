@@ -226,11 +226,21 @@ Each user entity in the room state contains a `permissions` object (an invited u
   (`videoSenders`); the first video adds it (one negotiation), after that camera on/off and screen sharing only call
   `replaceTrack` (a track, or `null` for nothing). Peers show the avatar from the announced media state, so a sender
   without a track needs no extra signal.
-- Memory: the app draws without the graphics card by default (`app.disableHardwareAcceleration()`, `client/main.js`).
-  The GPU process alone held 100-210 MB; measured with the private working set of all processes: join screen 181 -> 64
-  MB, two-person call with cameras 311 -> 167 MB, four-person call 412 -> 255 MB, for some more CPU in big calls (four-person
-  grid 12.6% -> 19.1% of an i3-1115G4, one video full screen 26% -> 24%). "Use the graphics card" in the Devices settings
-  stores `{ useGraphicsCard }` in `<userData>/display.json`, read at the next start. Also kept cheap: no background
+- Graphics card, chosen automatically at start (`client/gpuDetect.js`, before the app is ready as Electron requires):
+  - **Dedicated card** (NVIDIA; AMD Radeon RX/Pro or any AMD adapter not named "... Graphics"; Intel Arc A/B): the app
+    draws and decodes video on the GPU and passes `force_high_performance_gpu`, so Chromium picks the high-performance
+    adapter on laptops with two. On Linux laptops whose screen is driven by the other GPU it also sets PRIME render
+    offload (`__NV_PRIME_RENDER_OFFLOAD`/`__GLX_VENDOR_LIBRARY_NAME`/`__VK_LAYER_NV_optimus` for the NVIDIA driver,
+    `DRI_PRIME=1` for Mesa), unless the user set them.
+  - **Integrated graphics only** (Intel, AMD Ryzen "... Graphics", Intel "Arc Graphics"): no GPU
+    (`app.disableHardwareAcceleration()`), which saves memory.
+  - Windows reads each adapter's `DriverDesc`, `MatchingDeviceId` (PCI vendor) and, for AMD, `qwMemorySize` from the
+    display class in the registry (three `reg query /v` calls, about 0.1 s; a full `/s` dump takes over 3 s). Linux reads
+    `/sys/class/drm/card*/device` (`vendor`, the bound `driver`, `mem_info_vram_total`, `boot_vga`). `VIDEOCALL_GPU=on|off`
+    overrides it. The manual setting of 1.8-1.12 is gone (its `<userData>/display.json` is deleted).
+  The GPU process alone held 100-210 MB; measured with the private working set of all processes, without it: join screen
+  181 -> 64 MB, two-person call with cameras 311 -> 167 MB, four-person call 412 -> 255 MB, for some more CPU in big calls
+  (four-person grid 12.6% -> 19.1% of an i3-1115G4, one video full screen 26% -> 24%). Also kept cheap: no background
   blur over live video (tile labels and buttons), a still join-screen background (a moving one forced the card's blur to
   redraw every frame: 25% CPU without the GPU), and the device-change listener exists only while the settings are open
   (otherwise Chromium keeps its video capture service, about 20 MB, running).

@@ -1158,7 +1158,6 @@
     btnDeviceSettings.addEventListener('click', () => {
       modalSettings.classList.remove('hidden');
       populateDeviceList();
-      showGraphicsSetting();
     });
   }
 
@@ -1181,28 +1180,6 @@
     }
     if (isScreenSharing) showToast('Applies the next time you share your screen.');
   });
-
-  // Graphics card (desktop app only): off by default to save memory; a change applies at the next start
-  const graphicsSetting = document.getElementById('graphics-setting');
-  const toggleGraphicsCard = document.getElementById('toggle-graphics-card');
-  const graphicsRestartNote = document.getElementById('graphics-restart-note');
-  async function showGraphicsSetting() {
-    const setting = await window.videocallNative?.graphicsSetting?.().catch(() => null);
-    graphicsSetting.classList.toggle('hidden', !setting);
-    if (!setting) return;
-    toggleGraphicsCard.checked = setting.saved;
-    graphicsRestartNote.classList.toggle('hidden', setting.saved === setting.active);
-  }
-  toggleGraphicsCard.addEventListener('change', async () => {
-    const saved = await window.videocallNative.setGraphicsSetting(toggleGraphicsCard.checked).catch(() => false);
-    if (!saved) {
-      toggleGraphicsCard.checked = !toggleGraphicsCard.checked;
-      showToast('The setting could not be saved.');
-      return;
-    }
-    showGraphicsSetting();
-  });
-  document.getElementById('btn-restart-app').addEventListener('click', () => window.videocallNative.restartApp());
 
   if (btnCloseSettings) {
     btnCloseSettings.addEventListener('click', () => {
