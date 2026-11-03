@@ -152,6 +152,25 @@ async function runClientCoreTests() {
   assert.ok(String(turnEntry.urls).startsWith('turn:localhost:'), 'TURN host should match the address the client used');
   console.log('✓ Test 6 Passed: Client received the server TURN relay configuration');
 
+  // 7. The stage: Omid joined the audience, raises his hand, the admin brings him up
+  assert.strictEqual(coreOmid.currentUser.onStage, false, 'Invited people join the audience');
+  assert.strictEqual(ClientCore.isOnStage(coreOmid.currentUser), false);
+  assert.strictEqual(ClientCore.isOnStage({ username: 'old server' }), true, 'Without a stage (older servers) everyone counts as on it');
+  const handsAtAdmin = [];
+  const stageAtOmid = [];
+  coreAdmin.onHandChanged = (user, isMe) => handsAtAdmin.push([user.username, user.handRaised, isMe]);
+  coreOmid.onStageChanged = (user, isMe) => stageAtOmid.push([user.username, user.onStage, isMe]);
+  coreOmid.raiseHand(true);
+  await new Promise(r => setTimeout(r, 300));
+  assert.deepStrictEqual(handsAtAdmin, [['Omid', true, false]], 'The admin learns about the raised hand');
+  assert.strictEqual(coreAdmin.roomState.participants.find(u => u.username === 'Omid').handRaised, true);
+  coreAdmin.setStage(coreOmid.currentUser.id, true);
+  await new Promise(r => setTimeout(r, 300));
+  assert.deepStrictEqual(stageAtOmid, [['Omid', true, true]], 'Omid learns he is on stage');
+  assert.ok(coreOmid.currentUser.onStage && !coreOmid.currentUser.handRaised, 'His own state follows (hand lowered)');
+  assert.strictEqual(coreAdmin.roomState.participants.find(u => u.username === 'Omid').onStage, true);
+  console.log('✓ Test 7 Passed: Raised hands and the stage reach everyone, including oneself');
+
   // Clean up
   coreOmid.disconnect();
   coreAdmin.disconnect();

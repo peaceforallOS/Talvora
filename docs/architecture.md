@@ -78,6 +78,20 @@ The panel's **Kick** button only disconnects a user; their link keeps working. *
 before the removal is rejected from then on; a new invite generated later works normally.
 The admin cannot be removed.
 
+### 2.7b The Stage
+- The admin is always on stage; invited people join the audience (`onStage: false` in the participant state). The
+  audience sees and hears the stage but sends nothing: the server keeps its announced audio, video and screen sharing
+  off whatever its permissions, and its apps keep the microphone closed and the buttons disabled. On stage, the
+  permissions apply as before (and nothing starts until the person turns it on).
+- The admin brings someone up or back with `stage_set { userId, onStage }` (admins only; the admin cannot leave the
+  stage), from a checkmark next to each name in the People list. Going back to the audience turns their media off.
+- The audience raises a hand with `hand_raise { raised }`; the admin sees it at the top of the screen with an
+  **Accept** button (`stage_set`), or dismisses it for themselves. Coming on stage lowers the hand.
+- Both are broadcast as `room_state` (`stage_changed` with `onStage`, `handRaised`, `mediaState`;
+  `hand_changed` with `handRaised`). Receivers hide audience tiles from the grid and mute them, so even an app
+  from before 1.15.0 sending from the audience is not heard. Apps on a server without a stage (no `onStage`) treat
+  everyone as on it. The stage is per session: rejoining starts in the audience again.
+
 ### 2.7a The Admin Opens the Room
 - Invited users can only join while the admin is in the room; otherwise `auth_error` with code
   `ERR_ADMIN_ABSENT` ("The admin is not in the room yet. Please try again later.").
@@ -188,6 +202,8 @@ m-line: they receive the shared sound as a second audio track of the person's st
 | `invite_generate` | `{ targetUsername }` | Requests invite link generation for `targetUsername`. |
 | `chat_message` | `{ mode: 'public'\|'direct', recipients: [userId], text: string }` | Sends a message (direct: to the one recipient). |
 | `media_state` | `{ audio: boolean, video: boolean, screen: boolean }` | Reports client media mute/active state. |
+| `stage_set` | `{ userId: string, onStage: boolean }` | Admin only: bring someone on stage or back to the audience. |
+| `hand_raise` | `{ raised: boolean }` | Audience: ask the admin to come on stage (or take it back). |
 | `webrtc_signal` | `{ targetPeerId, signal }` | ICE candidates & SDP offer/answer for media relay. |
 
 #### Server -> Client Messages
@@ -201,6 +217,7 @@ m-line: they receive the shared sound as a second audio track of the person's st
 | `chat_message` | `{ id, senderId, senderName, mode, recipients, text, timestamp }` | Delivered chat message. |
 | `kick` | `{ reason: string }` | Force disconnection notice. |
 | `room_notice` | `{ message: string }` | Room news shown to everyone (the admin left / is back). |
+| `room_state` `stage_changed` / `hand_changed` | `{ userId, onStage?, handRaised, mediaState? }` | Someone came on stage, went back to the audience, or raised / lowered a hand. |
 
 ---
 

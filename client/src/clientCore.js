@@ -17,6 +17,8 @@ class ClientCore {
     this.onDisconnected = options.onDisconnected || (() => {});
     this.onServerError = options.onServerError || (() => {});
     this.onNotice = options.onNotice || (() => {}); // room news from the server, e.g. the admin left
+    this.onStageChanged = options.onStageChanged || (() => {}); // (user, isMe): brought on stage or back to the audience
+    this.onHandChanged = options.onHandChanged || (() => {}); // (user, isMe): a hand raised or lowered
 
     this.ws = null;
     this.currentUser = null;
@@ -261,6 +263,19 @@ class ClientCore {
           if (target) {
             target.mediaState = msg.mediaState;
           }
+        } else if (msg.action === 'stage_changed' || msg.action === 'hand_changed') {
+          const target = this.roomState.participants.find(u => u.id === msg.userId);
+          const isMe = !!this.currentUser && msg.userId === this.currentUser.id;
+          for (const user of [target, isMe ? this.currentUser : null]) {
+            if (!user) continue;
+            if (typeof msg.onStage === 'boolean') user.onStage = msg.onStage;
+            if (typeof msg.handRaised === 'boolean') user.handRaised = msg.handRaised;
+            if (msg.mediaState) user.mediaState = msg.mediaState;
+          }
+          if (target) {
+            if (msg.action === 'stage_changed') this.onStageChanged(target, isMe);
+            else this.onHandChanged(target, isMe);
+          }
         }
         this.onRoomState(msg);
         break;
@@ -326,6 +341,21 @@ class ClientCore {
       this.mediaEngine.stopCamera();
       this.sendMediaState({ video: false });
     }
+  }
+
+  // Admin: bring someone on stage, or back to the audience
+  setStage(userId, onStage) {
+    return this.send({ type: 'stage_set', userId, onStage: !!onStage });
+  }
+
+  // Audience: ask the admin to come on stage (or take the request back)
+  raiseHand(raised) {
+    return this.send({ type: 'hand_raise', raised: !!raised });
+  }
+
+  // On stage? Servers before 1.15.0 have no stage: everyone counts as on it
+  static isOnStage(user) {
+    return !user || user.onStage !== false;
   }
 
   sendMediaState(state) {

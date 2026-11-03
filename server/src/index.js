@@ -727,7 +727,23 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    // 5. WebRTC Signaling Relay (Offer, Answer, ICE Candidates)
+    // 5. The stage: the admin brings people up or sends them back to the audience
+    if (msg.type === MessageType.STAGE_SET) {
+      if (currentUser.role !== Role.ADMIN) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Only the admin can bring people on stage.' }));
+        return;
+      }
+      if (typeof msg.userId === 'string' && typeof msg.onStage === 'boolean') roomManager.setStage(msg.userId, msg.onStage);
+      return;
+    }
+
+    // 6. Raise or lower a hand (the audience asking to come on stage)
+    if (msg.type === MessageType.HAND_RAISE) {
+      if (typeof msg.raised === 'boolean') roomManager.setHand(currentUser.id, msg.raised);
+      return;
+    }
+
+    // 7. WebRTC Signaling Relay (Offer, Answer, ICE Candidates)
     if (msg.type === MessageType.SIGNAL) {
       const { targetPeerId, signal } = msg;
       if (typeof targetPeerId === 'string' && signal && typeof signal === 'object') {

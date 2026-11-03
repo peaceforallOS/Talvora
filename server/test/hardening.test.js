@@ -115,7 +115,8 @@ async function runTests() {
   };
   assert.deepStrictEqual(await announce({ audio: true, video: true, screen: true }), { audio: false, video: false, screen: false },
     'Voice, video and screen sharing must stay off without permission');
-  // Video and screen sharing are separate: either one alone
+  // Video and screen sharing are separate: either one alone (on stage, where permissions apply)
+  roomManager.setStage(omid.user.id, true);
   roomManager.updatePermissions(omid.user.id, { can_audio: true, can_video: true });
   assert.deepStrictEqual(await announce({ video: true, screen: true }), { audio: false, video: true, screen: false },
     'Video must not allow screen sharing');

@@ -34,6 +34,8 @@
   const btnToggleMic = document.getElementById('btn-toggle-mic');
   const btnToggleCam = document.getElementById('btn-toggle-cam');
   const btnShareScreen = document.getElementById('btn-share-screen');
+  const btnRaiseHand = document.getElementById('btn-raise-hand');
+  const handRequests = document.getElementById('hand-requests');
   const btnToggleChatPanel = document.getElementById('btn-toggle-chat-panel');
   const btnLeaveRoom = document.getElementById('btn-leave-room');
   const btnOpenInvite = document.getElementById('btn-open-invite');
@@ -160,6 +162,19 @@
     },
     onRoomState: state => {
       updateParticipantsUI();
+    },
+    onStageChanged: (user, isMe) => {
+      if (isMe) {
+        applyPermissionsToUI(clientCore.currentUser.permissions);
+        showToast(user.onStage
+          ? 'The admin brought you on stage. Unmute or start your video when you are ready.'
+          : 'You are back in the audience.');
+      }
+      updateHandRequests();
+    },
+    onHandChanged: (user, isMe) => {
+      if (isMe) updateRaiseHandButton();
+      updateHandRequests();
     },
     onPermissionsUpdated: perms => {
       applyPermissionsToUI(perms);
@@ -558,7 +573,7 @@
     // Open the microphone (muted, so unmuting is instant) only with voice permission; otherwise it
     // opens on the first unmute once the admin allows it. The camera opens only when turned on.
     try {
-      const stream = await mediaEngine.initLocalMedia({ audio: user.permissions?.can_audio !== false });
+      const stream = await mediaEngine.initLocalMedia({ audio: user.permissions?.can_audio !== false && ClientCore.isOnStage(user) });
       if (!stream || !clientCore.currentUser) return; // left or got disconnected while waiting for devices
       localVideo.srcObject = stream;
 
@@ -574,12 +589,17 @@
 
   function applyPermissionsToUI(perms) {
     if (!perms) return;
+    // The audience sends nothing: the stage comes first, then each permission
+    const onStage = ClientCore.isOnStage(clientCore.currentUser);
+    const OFF_STAGE = 'Only people on stage can talk, show video or share their screen. Raise your hand to ask the admin.';
+    localTile.classList.toggle('off-stage', !onStage);
+    updateRaiseHandButton();
 
     // Audio permission
-    if (perms.can_audio === false) {
+    if (!onStage || perms.can_audio === false) {
       btnToggleMic.classList.add('disabled');
       btnToggleMic.disabled = true;
-      btnToggleMic.title = 'Audio disabled by room administrator';
+      btnToggleMic.title = onStage ? 'Audio disabled by room administrator' : OFF_STAGE;
       setMicMutedUI(true);
     } else {
       btnToggleMic.classList.remove('disabled');
@@ -588,10 +608,10 @@
     }
 
     // Video permission
-    if (perms.can_video === false) {
+    if (!onStage || perms.can_video === false) {
       btnToggleCam.classList.add('disabled');
       btnToggleCam.disabled = true;
-      btnToggleCam.title = 'Video disabled by room administrator';
+      btnToggleCam.title = onStage ? 'Video disabled by room administrator' : OFF_STAGE;
       setCamOffUI(true);
     } else {
       btnToggleCam.classList.remove('disabled');
@@ -600,7 +620,7 @@
     }
 
     // Screen sharing: its own permission (servers before 1.10.0 tie it to video)
-    if ((perms.can_screen ?? perms.can_video) === false) {
+    if (!onStage || (perms.can_screen ?? perms.can_video) === false) {
       if (isScreenSharing) {
         mediaEngine.stopScreenShare();
         setScreenShareUI(false);
@@ -608,7 +628,7 @@
       }
       btnShareScreen.classList.add('disabled');
       btnShareScreen.disabled = true;
-      btnShareScreen.title = 'Screen sharing disabled by room administrator';
+      btnShareScreen.title = onStage ? 'Screen sharing disabled by room administrator' : OFF_STAGE;
     } else {
       btnShareScreen.classList.remove('disabled');
       btnShareScreen.disabled = false;
@@ -779,6 +799,57 @@
     videoGrid.querySelectorAll('.peer-tile').forEach(applyScreenAudioVolume);
   }, 40);
 
+  // --- The stage: raising a hand (audience) and accepting it (admin) ---
+  function updateRaiseHandButton() {
+    const me = clientCore.currentUser;
+    // Only the audience raises hands (and only with a server that has a stage)
+    const show = !!me && me.role !== 'admin' && me.onStage === false;
+    btnRaiseHand.classList.toggle('hidden', !show);
+    const raised = !!me?.handRaised;
+    btnRaiseHand.classList.toggle('hand-up', show && raised);
+    btnRaiseHand.querySelector('.ctrl-label').textContent = raised ? 'Lower hand' : 'Raise hand';
+    btnRaiseHand.title = raised ? 'Take back your request to come on stage' : 'Ask the admin to bring you on stage';
+  }
+
+  btnRaiseHand.addEventListener('click', () => {
+    const raise = !clientCore.currentUser?.handRaised;
+    if (clientCore.raiseHand(raise) && raise) showToast('Your hand is raised: the admin can bring you on stage.');
+  });
+
+  // The admin sees each raised hand at the top of the screen until it is accepted, dismissed or lowered
+  const dismissedHands = new Set();
+  function updateHandRequests() {
+    const iAmAdmin = clientCore.currentUser?.role === 'admin';
+    const waiting = iAmAdmin
+      ? (clientCore.roomState.participants || []).filter(u => u.handRaised && !ClientCore.isOnStage(u) && !dismissedHands.has(u.id))
+      : [];
+    for (const id of [...dismissedHands]) {
+      if (!(clientCore.roomState.participants || []).some(u => u.id === id && u.handRaised)) dismissedHands.delete(id);
+    }
+    const shown = new Set(waiting.map(u => u.id));
+    handRequests.querySelectorAll('.hand-request').forEach(card => {
+      if (!shown.has(card.dataset.userId)) card.remove();
+    });
+    waiting.forEach(u => {
+      if (handRequests.querySelector(`.hand-request[data-user-id="${CSS.escape(u.id)}"]`)) return;
+      const card = document.createElement('div');
+      card.className = 'hand-request';
+      card.dataset.userId = u.id;
+      card.innerHTML = `
+        ${iconSvg('hand')}
+        <span class="hand-request-text"><strong>${escapeHtml(u.username)}</strong> raised their hand</span>
+        <button type="button" class="btn btn-primary hand-accept">Accept</button>
+        <button type="button" class="hand-dismiss" title="Not now" aria-label="Not now">${iconSvg('x')}</button>
+      `;
+      card.querySelector('.hand-accept').addEventListener('click', () => clientCore.setStage(u.id, true));
+      card.querySelector('.hand-dismiss').addEventListener('click', () => {
+        dismissedHands.add(u.id);
+        card.remove();
+      });
+      handRequests.appendChild(card);
+    });
+  }
+
   function handleRemoteTrack(peerId, stream, track) {
     const tile = ensurePeerTile(peerId);
     const videoEl = tile.querySelector('video');
@@ -794,6 +865,12 @@
     const tile = document.getElementById(`peer-tile-${peer.id}`);
     if (!tile) return;
     const media = peer.mediaState || {};
+    // Off stage: out of the grid and silent (even if an older app still sends something)
+    const offStage = !ClientCore.isOnStage(peer);
+    tile.classList.toggle('off-stage', offStage);
+    tile.querySelector('video').muted = offStage;
+    const sharedSound = tile.querySelector('audio.screen-audio');
+    if (sharedSound) sharedSound.muted = offStage;
     setStatusIcon(tile.querySelector('.status-icon'), !media.audio);
     tile.querySelector('.avatar-fallback').classList.toggle('hidden', !!(media.video || media.screen));
     tile.classList.toggle('is-screen', !!media.screen);
@@ -808,8 +885,9 @@
 
   // The grid picks its column count from data-count (see style.css)
   function updateGridLayout() {
-    const count = videoGrid.querySelectorAll('.video-tile').length;
-    videoGrid.dataset.count = count > 9 ? 'many' : String(count);
+    const count = videoGrid.querySelectorAll('.video-tile:not(.off-stage)').length;
+    videoGrid.dataset.count = count > 9 ? 'many' : String(Math.max(1, count));
+    videoGrid.classList.toggle('is-alone', (clientCore.roomState.participants || []).length <= 1);
   }
 
   // --- Call Control Buttons ---
@@ -1000,6 +1078,10 @@
     setCamOffUI(true);
     chatController.reset();
     speakingPeers.clear();
+    handRequests.innerHTML = '';
+    dismissedHands.clear();
+    localTile.classList.remove('off-stage');
+    btnRaiseHand.classList.add('hidden');
     [modalInvite, modalSettings].forEach(m => m?.classList.add('hidden'));
   }
 
@@ -1024,8 +1106,13 @@
     updateGridLayout();
 
     participantsList.innerHTML = '';
-    participants.forEach(u => {
+    const iAmAdmin = clientCore.currentUser?.role === 'admin';
+    // The stage first, then raised hands, then the audience
+    const rank = u => (u.role === 'admin' ? 0 : ClientCore.isOnStage(u) ? 1 : u.handRaised ? 2 : 3);
+    [...participants].sort((a, b) => rank(a) - rank(b)).forEach(u => {
       const isMe = clientCore.currentUser && u.id === clientCore.currentUser.id;
+      const onStage = ClientCore.isOnStage(u);
+      const stageKnown = u.onStage !== undefined;
       const item = document.createElement('div');
       item.className = 'participant-item';
       const perms = u.permissions || {};
@@ -1044,15 +1131,28 @@
             <span class="badge ${u.role === 'admin' ? 'badge-admin' : 'badge-user'}">${escapeHtml(u.role)}</span>
           </div>
         </div>
-        <div class="participant-status-icons">
-          <span class="${mic.cls}" title="${mic.title}">${iconSvg(mic.icon)}</span>
-          <span class="${cam.cls}" title="${cam.title}">${iconSvg(cam.icon)}</span>
+        <div class="participant-actions">
+          ${u.handRaised ? `<span class="participant-hand" title="${escapeHtml(u.username)} raised their hand">${iconSvg('hand')}</span>` : ''}
+          ${stageKnown && !onStage && !iAmAdmin ? '<span class="participant-stage-tag">audience</span>' : ''}
+          <div class="participant-status-icons">
+            <span class="${mic.cls}" title="${mic.title}">${iconSvg(mic.icon)}</span>
+            <span class="${cam.cls}" title="${cam.title}">${iconSvg(cam.icon)}</span>
+          </div>
+          ${iAmAdmin && stageKnown && u.role !== 'admin'
+            ? `<button type="button" class="stage-toggle ${onStage ? 'is-on' : ''}" data-user-id="${escapeHtml(u.id)}"
+                 title="${onStage ? `Send ${escapeHtml(u.username)} back to the audience` : `Bring ${escapeHtml(u.username)} on stage`}"
+                 aria-pressed="${onStage}">${iconSvg('check')}</button>`
+            : ''}
         </div>
       `;
+      const toggle = item.querySelector('.stage-toggle');
+      if (toggle) toggle.addEventListener('click', () => clientCore.setStage(u.id, !onStage));
       setAvatarHue(item.querySelector('.user-avatar-sm'), u.username);
       participantsList.appendChild(item);
       if (!isMe) updatePeerTile(u);
     });
+    updateGridLayout();
+    updateHandRequests();
   }
 
   // --- Invite Modal ---

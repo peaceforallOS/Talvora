@@ -159,6 +159,45 @@ async function runTests() {
   assert.ok(chatErr.message.includes('revoked'), 'Chat revoke error message check failed');
   console.log('✓ Test 7 Passed: Revoked chat permission successfully blocked messaging');
 
+  // Test 7b: The stage. Invited people join the audience; only the admin brings them up (directly, or
+  // by accepting a raised hand); the audience sends no media whatever its permissions
+  const omidState = () => roomManager.getParticipantByUsername('Omid');
+  assert.strictEqual(adminAuthMsg.user.onStage, true, 'The admin is always on stage');
+  assert.strictEqual(omidAuthSuccess.user.onStage, false, 'Invited people join the audience');
+  assert.strictEqual(omidAuthSuccess.user.handRaised, false);
+  roomManager.updatePermissions(omidState().id, { can_audio: true, can_video: true, can_screen: true });
+  omidWs.send(JSON.stringify({ type: MessageType.MEDIA_STATE_CHANGE, mediaState: { audio: true, video: true, screen: true } }));
+  await sleep(150);
+  assert.deepStrictEqual({ ...omidState().mediaState }, { audio: false, video: false, screen: false }, 'The audience sends nothing, even with permission');
+  // Omid raises his hand: everyone (above all the admin) learns it
+  const handSeen = waitForMessage(adminWs, MessageType.ROOM_STATE);
+  omidWs.send(JSON.stringify({ type: MessageType.HAND_RAISE, raised: true }));
+  const hand = await handSeen;
+  assert.deepStrictEqual([hand.action, hand.userId, hand.handRaised], ['hand_changed', omidState().id, true]);
+  // Reza cannot bring Omid up; the admin can
+  rezaWs.send(JSON.stringify({ type: MessageType.STAGE_SET, userId: omidState().id, onStage: true }));
+  assert.ok((await waitForMessage(rezaWs, 'error')).message.includes('Only the admin'), 'A user must not move people to the stage');
+  assert.strictEqual(omidState().onStage, false);
+  const stageSeen = waitForMessage(omidWs, MessageType.ROOM_STATE);
+  adminWs.send(JSON.stringify({ type: MessageType.STAGE_SET, userId: omidState().id, onStage: true }));
+  const staged = await stageSeen;
+  assert.deepStrictEqual([staged.action, staged.onStage, staged.handRaised], ['stage_changed', true, false], 'Brought on stage, hand lowered');
+  omidWs.send(JSON.stringify({ type: MessageType.MEDIA_STATE_CHANGE, mediaState: { audio: true, video: true } }));
+  await sleep(150);
+  assert.deepStrictEqual([omidState().mediaState.audio, omidState().mediaState.video], [true, true], 'On stage, permissions apply');
+  omidWs.send(JSON.stringify({ type: MessageType.HAND_RAISE, raised: true }));
+  await sleep(150);
+  assert.strictEqual(omidState().handRaised, false, 'No raised hand on stage');
+  // Back to the audience: everything off
+  adminWs.send(JSON.stringify({ type: MessageType.STAGE_SET, userId: omidState().id, onStage: false }));
+  await sleep(150);
+  assert.strictEqual(omidState().onStage, false);
+  assert.deepStrictEqual({ ...omidState().mediaState }, { audio: false, video: false, screen: false }, 'Leaving the stage turns media off');
+  adminWs.send(JSON.stringify({ type: MessageType.STAGE_SET, userId: roomManager.getParticipantByUsername('Admin').id, onStage: false }));
+  await sleep(150);
+  assert.strictEqual(roomManager.getParticipantByUsername('Admin').onStage, true, 'The admin cannot leave the stage');
+  console.log('✓ Test 7b Passed: Invited people join the audience; the admin brings them on stage, also via a raised hand');
+
   // Test 8: The admin leaves and comes back in time: everyone stays
   roomManager.adminGraceMs = 800; // 10 seconds in use; shorter here
   const joinAdmin = async (options) => {

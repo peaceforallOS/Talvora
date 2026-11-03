@@ -70,6 +70,10 @@ class RoomManager {
         video: false,
         screen: false
       },
+      // The stage: the admin is always on it; invited people join the audience, which sees and hears
+      // the stage, and the admin brings them up (People list, or accepting a raised hand)
+      onStage: (role || Role.USER) === Role.ADMIN,
+      handRaised: false,
       ws,
       joinedAt: Date.now()
     };
@@ -131,6 +135,8 @@ class RoomManager {
       role: user.role,
       permissions: user.permissions,
       mediaState: user.mediaState,
+      onStage: user.onStage,
+      handRaised: user.handRaised,
       joinedAt: user.joinedAt
     };
   }
@@ -143,7 +149,8 @@ class RoomManager {
     const user = this.participants.get(userId);
     if (!user) return null;
 
-    // Enforce permission restrictions on media state
+    // Enforce permission restrictions on media state; the audience sends nothing
+    if (!user.onStage) mediaState.audio = mediaState.video = mediaState.screen = false;
     if (!user.permissions.can_audio) mediaState.audio = false;
     if (!user.permissions.can_video) mediaState.video = false;
     if (!user.permissions.can_screen) mediaState.screen = false;
@@ -188,6 +195,42 @@ class RoomManager {
     });
 
     return user.permissions;
+  }
+
+  /**
+   * Bring someone on stage or back to the audience (the admin stays on stage). Leaving the stage
+   * turns their microphone, camera and screen sharing off; coming up lowers their hand.
+   * Returns the participant's public state, or null.
+   */
+  setStage(userId, onStage) {
+    const user = this.participants.get(userId);
+    if (!user || user.role === Role.ADMIN) return null;
+    user.onStage = !!onStage;
+    user.handRaised = false;
+    if (!user.onStage) user.mediaState = { audio: false, video: false, screen: false };
+    this.broadcast({
+      type: MessageType.ROOM_STATE,
+      action: 'stage_changed',
+      userId,
+      onStage: user.onStage,
+      handRaised: user.handRaised,
+      mediaState: user.mediaState
+    });
+    return this.getPublicUser(user);
+  }
+
+  // Raise or lower a hand; only the audience raises hands (someone on stage has nothing to ask)
+  setHand(userId, raised) {
+    const user = this.participants.get(userId);
+    if (!user || (raised && user.onStage) || user.handRaised === !!raised) return null;
+    user.handRaised = !!raised;
+    this.broadcast({
+      type: MessageType.ROOM_STATE,
+      action: 'hand_changed',
+      userId,
+      handRaised: user.handRaised
+    });
+    return this.getPublicUser(user);
   }
 
   kickParticipant(userId, reason = 'Kicked by admin', { replaced = false } = {}) {

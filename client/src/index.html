@@ -41,6 +41,7 @@
     <symbol id="i-log-in" viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5"/><path d="M15 12H3"/></symbol>
     <symbol id="i-server" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="8" rx="2"/><rect x="2" y="13" width="20" height="8" rx="2"/><path d="M6 7h.01"/><path d="M6 17h.01"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-hand" viewBox="0 0 24 24"><path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></symbol>
     <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
     <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
@@ -148,6 +149,9 @@
         </div>
       </header>
 
+      <!-- Raised hands, for the admin: Accept brings that person on stage -->
+      <div id="hand-requests" class="hand-requests" aria-live="polite"></div>
+
       <!-- Main Room Body: Stage + Sidebar -->
       <div class="room-body">
         <main class="video-grid-container">
@@ -245,6 +249,11 @@
             <svg class="icon icon-on"><use href="#i-screen"/></svg>
             <svg class="icon icon-off"><use href="#i-screen-off"/></svg>
             <span class="ctrl-label">Share Screen</span>
+          </button>
+
+          <button id="btn-raise-hand" class="control-btn hidden" title="Ask the admin to bring you on stage">
+            <svg class="icon"><use href="#i-hand"/></svg>
+            <span class="ctrl-label">Raise hand</span>
           </button>
 
           <span class="dock-divider"></span>

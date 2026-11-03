@@ -13,6 +13,8 @@ const MessageType = {
   CHAT_SEND: 'chat_send',
   MEDIA_STATE_CHANGE: 'media_state_change',
   SIGNAL: 'signal',
+  STAGE_SET: 'stage_set', // admin: { userId, onStage } brings someone on stage or back to the audience
+  HAND_RAISE: 'hand_raise', // audience: { raised } asks the admin to be brought on stage
 
   // Server -> Client
   AUTH_SUCCESS: 'auth_success',
