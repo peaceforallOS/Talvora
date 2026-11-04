@@ -181,6 +181,14 @@ unchanged. Under heavy CPU load audio dropouts let bursts through: while sharing
 about -27 dB at peaks against -19 dB for the shared sound. A larger buffer (`node.latency`) made it worse, and a second
 reader of the monitor changed nothing. Not yet measured on real Linux hardware.
 
+**Plugging a microphone in or out during a call** (`MediaEngine.checkMicrophones`): while the microphone is open the
+engine watches `devicechange` and the track's `ended`. A new microphone becomes the one in use, and what was in use is
+remembered; unplugging it goes back through those, then to the system's default. Only the source of the processing
+graph changes, so peers keep the same track with no negotiation, and mute stays. If the new device cannot be opened, the
+working one stays in use. Chromium on Linux only reports hardware events, and
+a device that only appears in the sound system sends none, so there the list is also read every 2 seconds. A headset
+plugged in always takes over, even when a microphone was chosen in the settings; the settings then show the one in use.
+
 **Shared sound** (always shared with the screen when the system offers it): the main process grants system
 audio with the screen. On Windows it asks for `loopbackWithoutChrome` (Electron 45; Electron 33 ignored it): the
 capture leaves out everything Talvora itself plays (the others' voices and shared sound), measured -49 -> -110 dB

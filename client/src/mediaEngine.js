@@ -22,6 +22,9 @@ const METER_CEILING_DB = -15;
 const MIC_ECHO_CANCELLATION = { ideal: 'all' };
 const CLEAN_MIC_LABEL = 'Talvora clean microphone';
 const CLEAN_MIC_WAIT_MS = 3000;
+const MIC_ALIASES = ['default', 'communications'];
+const MIC_CHECK_DELAY_MS = 700;
+const MIC_POLL_MS = 2000;
 const AUDIO_CONSTRAINTS = { echoCancellation: MIC_ECHO_CANCELLATION, noiseSuppression: true, autoGainControl: true, channelCount: 1, sampleRate: AUDIO_SAMPLE_RATE };
 // The computer's sound shared with the screen: its own track, never through the microphone's speech
 // processing (noise suppression, automatic gain and echo cancellation all damage music). On Windows the
@@ -96,6 +99,7 @@ class MediaEngine {
     this.onSendSignal = options.onSendSignal || (() => {});
     this.onScreenShareEnded = options.onScreenShareEnded || (() => {});
     this.onRemoteScreenAudio = options.onRemoteScreenAudio || (() => {}); // (peerId, track | null)
+    this.onMicrophoneChanged = options.onMicrophoneChanged || (() => {}); // (label | null): followed a device plugged in or out; null: none left
 
     this.localStream = null;
     this.screenStream = null;
@@ -114,6 +118,13 @@ class MediaEngine {
     this.micSource = null; // its node in the processing graph, replaced when the microphone changes
     this.micInput = null; // first processing node (the high-pass filter)
     this.preferredDevices = {}; // { audioinput, videoinput } ids chosen in the settings
+    this.micWatch = null; // devicechange listener while the microphone is open
+    this.micPoll = null;
+    this.micCheckTimer = null;
+    this.micChange = null; // the microphone change in progress: changes run one at a time
+    this.knownMics = []; // ids of the microphones connected at the last look
+    this.activeMicId = null; // the real device in use; null: the system's default
+    this.previousMics = []; // what was in use before each device was plugged in, to go back to
     this.noiseSuppressor = null;
     this.localDetector = null;
     this.peerDetectors = new Map(); // peerId -> { detector, source, track }
@@ -181,6 +192,7 @@ class MediaEngine {
     for (const pc of this.peerConnections.values()) {
       this.addLocalTracks(pc);
     }
+    if (stream.getAudioTracks().length) this.startMicrophoneWatch();
     return this.localStream;
   }
 
@@ -409,6 +421,7 @@ class MediaEngine {
       for (const pc of this.peerConnections.values()) {
         if (pc.signalingState !== 'closed') this.addLocalTracks(pc);
       }
+      this.startMicrophoneWatch();
       return track;
     })();
     try {
@@ -567,7 +580,8 @@ class MediaEngine {
   currentDevices() {
     const mic = this.rawAudioTrack || this.localStream?.getAudioTracks()[0];
     const cam = this.localStream?.getVideoTracks()[0];
-    return { audioinput: mic?.getSettings().deviceId || null, videoinput: cam?.getSettings().deviceId || null };
+    const micId = this.activeMicId || (mic?.label === CLEAN_MIC_LABEL ? 'default' : mic?.getSettings().deviceId) || null;
+    return { audioinput: micId, videoinput: cam?.getSettings().deviceId || null };
   }
 
   /**
@@ -581,11 +595,136 @@ class MediaEngine {
       this.setPreferredDevices({ audioinput: deviceId });
       return null;
     }
-    const clean = await this.cleanMicrophone(deviceId);
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: { ...AUDIO_CONSTRAINTS, ...(clean || { deviceId: { exact: deviceId } }) } });
+    const track = await this.replaceMicrophone(deviceId === 'default' ? null : deviceId);
+    this.setPreferredDevices({ audioinput: deviceId });
+    this.previousMics = []; // chosen by hand: unplugging it goes back to the system's default
+    return track;
+  }
+
+  // --- Plugging a microphone in or out during a call ---
+
+  // Real devices only: "default" and "communications" are other names for them
+  async listMicrophones() {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices.filter(d => d.kind === 'audioinput' && d.deviceId && !MIC_ALIASES.includes(d.deviceId) && d.label !== CLEAN_MIC_LABEL);
+  }
+
+  async startMicrophoneWatch() {
+    if (this.micWatch || !navigator.mediaDevices?.enumerateDevices || !navigator.mediaDevices.addEventListener) return;
+    this.micWatch = () => this.scheduleMicrophoneCheck();
+    navigator.mediaDevices.addEventListener('devicechange', this.micWatch);
+    // Chromium on Linux only reports hardware events, which devices appearing in the sound system (such
+    // as Bluetooth headsets) may not cause, so there the list is also looked at regularly
+    if (!OWN_SOUND_EXCLUDED) this.micPoll = setInterval(() => this.checkMicrophones(), MIC_POLL_MS);
+    const generation = this.generation;
+    try {
+      const mics = await this.listMicrophones();
+      if (generation !== this.generation) return;
+      this.knownMics = mics.map(d => d.deviceId);
+      const preferred = this.preferredDevices.audioinput;
+      this.activeMicId = this.knownMics.includes(preferred) ? preferred : null;
+      this.previousMics = [];
+    } catch (e) {
+      console.warn('Cannot watch for microphones:', e);
+    }
+    this.watchMicrophoneTrack();
+  }
+
+  stopMicrophoneWatch() {
+    if (this.micWatch) navigator.mediaDevices.removeEventListener('devicechange', this.micWatch);
+    this.micWatch = null;
+    clearInterval(this.micPoll);
+    this.micPoll = null;
+    clearTimeout(this.micCheckTimer);
+    this.micCheckTimer = null;
+    this.knownMics = [];
+    this.activeMicId = null;
+    this.previousMics = [];
+    const track = this.rawAudioTrack || this.localStream?.getAudioTracks()[0];
+    if (track) track.onended = null;
+  }
+
+  // A device ending without a change in the list: another program took it, or the driver reset
+  watchMicrophoneTrack() {
+    const track = this.rawAudioTrack || this.localStream?.getAudioTracks()[0];
+    if (track) track.onended = () => this.scheduleMicrophoneCheck();
+  }
+
+  // Windows and Linux report one change as several events, while the device is still appearing
+  scheduleMicrophoneCheck() {
+    clearTimeout(this.micCheckTimer);
+    this.micCheckTimer = setTimeout(() => this.checkMicrophones(), MIC_CHECK_DELAY_MS);
+  }
+
+  checkMicrophones() {
+    const generation = this.generation;
+    this.micChange = (this.micChange || Promise.resolve()).then(async () => {
+      if (generation !== this.generation || !this.micWatch) return;
+      const current = this.rawAudioTrack || this.localStream?.getAudioTracks()[0];
+      if (!current) return;
+      const mics = await this.listMicrophones();
+      const ids = mics.map(d => d.deviceId);
+      const added = ids.filter(id => !this.knownMics.includes(id));
+      const removed = this.knownMics.filter(id => !ids.includes(id));
+      const ended = current.readyState === 'ended';
+      this.knownMics = ids;
+      this.previousMics = this.previousMics.filter(id => ids.includes(id));
+
+      let target;
+      if (added.length) {
+        target = added[added.length - 1];
+        if (this.activeMicId && ids.includes(this.activeMicId)) this.previousMics.push(this.activeMicId);
+      } else if (this.activeMicId && removed.includes(this.activeMicId)) {
+        target = this.previousMics.pop() || null;
+      } else if (ended) {
+        target = this.activeMicId && ids.includes(this.activeMicId) ? this.activeMicId : null;
+      } else if (removed.length && !this.activeMicId) {
+        target = null; // the system's default may have been the one unplugged
+      } else {
+        return;
+      }
+      await this.moveToMicrophone(target, mics, generation, added.length > 0);
+    }).catch(e => console.warn('Could not follow the microphone change:', e));
+    return this.micChange;
+  }
+
+  async moveToMicrophone(target, mics, generation, announce) {
+    const previous = this.rawAudioTrack || this.localStream?.getAudioTracks()[0];
+    const wasLive = previous?.readyState !== 'ended';
+    try {
+      await this.replaceMicrophone(target);
+    } catch (e) {
+      console.warn('Could not open the microphone:', e);
+      if (wasLive) return; // the one in use still works: stay on it
+      if (target === null) {
+        // None left: the next device plugged in is picked up
+        this.activeMicId = null;
+        if (generation === this.generation) this.onMicrophoneChanged(null);
+        return;
+      }
+      await this.replaceMicrophone(null);
+    }
+    if (generation !== this.generation) return;
+    const track = this.rawAudioTrack || this.localStream?.getAudioTracks()[0];
+    const label = mics.find(d => d.deviceId === this.activeMicId)?.label || (track?.label !== CLEAN_MIC_LABEL && track?.label) || 'Default';
+    if (announce || !wasLive || target !== null) this.onMicrophoneChanged(label);
+  }
+
+  // deviceId: a real device, or null for the system's default
+  async replaceMicrophone(deviceId) {
+    const current = this.rawAudioTrack || this.localStream?.getAudioTracks()[0];
+    if (current) current.onended = null; // restarting the echo helper ends it, on purpose
+    let stream;
+    try {
+      const clean = await this.cleanMicrophone(deviceId);
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { ...AUDIO_CONSTRAINTS, ...(clean || (deviceId ? { deviceId: { exact: deviceId } } : {})) } });
+    } catch (e) {
+      this.watchMicrophoneTrack(); // the old one is still in use
+      throw e;
+    }
     const track = stream.getAudioTracks()[0];
     track.enabled = current ? current.enabled : true;
-    this.setPreferredDevices({ audioinput: deviceId });
+    this.activeMicId = deviceId;
 
     if (this.audioContext && this.micInput) {
       const source = this.audioContext.createMediaStreamSource(new MediaStream([track]));
@@ -604,6 +743,7 @@ class MediaEngine {
       }
     }
     if (current) current.stop();
+    this.watchMicrophoneTrack();
     return track;
   }
 
@@ -1008,6 +1148,7 @@ class MediaEngine {
     this.rawAudioTrack = null;
     this.micSource = null;
     this.micInput = null;
+    this.stopMicrophoneWatch();
     if (typeof window !== 'undefined') window.videocallNative?.echoCancelStop?.();
     if (this.localStream) {
       this.localStream.getTracks().forEach(t => t.stop());

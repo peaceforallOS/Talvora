@@ -106,6 +106,10 @@
     onRemoteScreenAudio: (peerId, track) => {
       handleRemoteScreenAudio(peerId, track);
     },
+    onMicrophoneChanged: label => {
+      showToast(label ? `Now using ${label}` : 'No microphone is connected.');
+      if (!modalSettings.classList.contains('hidden')) populateDeviceList();
+    },
     onSendSignal: (targetPeerId, signal) => {
       clientCore.send({
         type: 'signal',
@@ -1515,7 +1519,7 @@
         if (pick) select.value = pick;
         select.dataset.current = select.value;
       };
-      choose('audioinput', saved.audioinput, inUse.audioinput);
+      choose('audioinput', inUse.audioinput, saved.audioinput);
       choose('videoinput', saved.videoinput, inUse.videoinput);
       choose('audiooutput', speakerId, 'default');
       deviceMenus.forEach(menu => menu.render());

@@ -46,6 +46,7 @@ const page = fs.readFileSync(path.join(__dirname, '../src/mediaEngine.js'), 'utf
 assert.ok(page.includes(`const CLEAN_MIC_LABEL = '${CLEAN_MIC_LABEL}'`), 'The page looks for the device by this name');
 console.log('✓ Test 3 Passed: The chosen microphone is cleaned, on a device the page can find');
 
+(async () => {
 // 4. Starting and stopping
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'talvora-echo-test-'));
 function fakeHelper() {
@@ -58,7 +59,7 @@ function fakeHelper() {
       const child = new EventEmitter();
       child.stdin = new EventEmitter();
       child.stdin.ended = false;
-      child.stdin.end = () => { child.stdin.ended = true; };
+      child.stdin.end = () => { child.stdin.ended = true; child.emit('exit', 0); };
       Object.assign(child, { cmd, args, options });
       spawned.push(child);
       return child;
@@ -68,43 +69,47 @@ function fakeHelper() {
 }
 
 let { engine, spawned } = fakeHelper();
-assert.strictEqual(engine.start(dir, null), true);
+assert.strictEqual(await engine.start(dir, null), true);
 assert.strictEqual(spawned.length, 1);
 assert.ok(!('LD_LIBRARY_PATH' in spawned[0].options.env), 'Started without the AppImage\'s libraries');
 assert.ok(spawned[0].args[1].includes('cat > /dev/null'), 'The helper ends when Talvora does (its stdin closes)');
 assert.strictEqual(spawned[0].args[2], path.join(dir, 'echo-cancel.conf'));
 assert.ok(!fs.readFileSync(spawned[0].args[2], 'utf8').includes('target.object'));
 
-assert.strictEqual(engine.start(dir, null), true, 'Opening the microphone again');
+assert.strictEqual(await engine.start(dir, null), true, 'Opening the microphone again');
 assert.strictEqual(spawned.length, 1, 'keeps the helper already running');
 
-assert.strictEqual(engine.start(dir, 'USB Headset'), true, 'Another microphone');
+assert.strictEqual(await engine.start(dir, 'USB Headset'), true, 'Another microphone');
 assert.strictEqual(spawned.length, 2, 'needs a new helper');
 assert.ok(spawned[0].stdin.ended, 'and ends the old one');
 assert.ok(fs.readFileSync(spawned[1].args[2], 'utf8').includes('target.object = "usb_in"'));
 
-engine.stop();
+await engine.stop();
 assert.ok(spawned[1].stdin.ended, 'Leaving the call ends the helper');
-engine.stop(); // already stopped: nothing to do
+await engine.stop(); // already stopped: nothing to do
 
-assert.strictEqual(engine.start(dir, null), true, 'The next call');
+assert.strictEqual(await engine.start(dir, null), true, 'The next call');
 assert.strictEqual(spawned.length, 3, 'starts it again');
 spawned[2].emit('exit', 1);
-assert.strictEqual(engine.start(dir, null), true, 'A helper that died');
+assert.strictEqual(await engine.start(dir, null), true, 'A helper that died');
 assert.strictEqual(spawned.length, 4, 'is replaced, not assumed to be running');
-engine.stop();
+await engine.stop();
 fs.rmSync(dir, { recursive: true, force: true });
 console.log('✓ Test 4 Passed: One helper per call, following the chosen microphone');
 
 // 5. Where nothing may start
 const never = () => { throw new Error('Must not start anything'); };
-assert.strictEqual(createEchoCancel({ platform: 'win32', spawn: never, spawnSync: never }).start(dir, null), false, 'Windows has its own echo cancellation');
+assert.strictEqual(await createEchoCancel({ platform: 'win32', spawn: never, spawnSync: never }).start(dir, null), false, 'Windows has its own echo cancellation');
 const old = createEchoCancel({ platform: 'linux', spawn: never, spawnSync: () => ({ status: 0, stdout: 'Linked with libpipewire 0.3.48\n' }) });
-assert.strictEqual(old.start(dir, null), false, 'PipeWire too old');
+assert.strictEqual(await old.start(dir, null), false, 'PipeWire too old');
 const none = createEchoCancel({ platform: 'linux', spawn: never, spawnSync: () => ({ status: null, error: new Error('ENOENT'), stdout: null }) });
-assert.strictEqual(none.start(dir, null), false, 'No PipeWire at all (PulseAudio)');
+assert.strictEqual(await none.start(dir, null), false, 'No PipeWire at all (PulseAudio)');
 console.log('✓ Test 5 Passed: Nothing starts where it cannot work');
 
 console.log('\n========================================');
 console.log(' ALL LINUX ECHO CANCELLATION TESTS PASSED!');
 console.log('========================================');
+})().catch(err => {
+  console.error('Linux echo cancellation test failure:', err);
+  process.exit(1);
+});

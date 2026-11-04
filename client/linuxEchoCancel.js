@@ -18,6 +18,7 @@ const childProcess = require('child_process');
 const CLEAN_MIC_LABEL = 'Talvora clean microphone';
 const MIN_VERSION = [0, 3, 66]; // the first with monitor mode that Linux distributions ship
 const CONFIG_FILE = 'echo-cancel.conf';
+const STOP_WAIT_MS = 1500;
 // Stops PipeWire's helper when stdin closes: however Talvora ends, the pipe does too
 const HELPER_SCRIPT = 'pipewire -c "$0" & p=$!; cat > /dev/null; kill "$p" 2> /dev/null';
 
@@ -102,20 +103,29 @@ function createEchoCancel({ platform = process.platform, spawn = childProcess.sp
     return supported;
   }
 
+  // Resolves once the helper has ended, so a new one's device cannot be confused with the old one's
   function stop() {
-    if (!helper) return;
-    helper.stdin.end();
+    if (!helper) return Promise.resolve();
+    const child = helper;
     helper = null;
     helperMic = null;
+    return new Promise(resolve => {
+      const timer = setTimeout(resolve, STOP_WAIT_MS);
+      child.once('exit', () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      child.stdin.end();
+    });
   }
 
   // Resolves whether the helper runs. The device takes a moment to appear; the page looks for it.
-  function start(dir, micLabel) {
+  async function start(dir, micLabel) {
     if (!isSupported()) return false;
     const dump = micLabel ? spawnSync('pw-dump', [], { env: systemEnv(env), encoding: 'utf8', timeout: 3000, maxBuffer: 16 * 1024 * 1024 }) : null;
     const micNode = dump ? findMicNode(dump.stdout, micLabel) : null;
     if (helper && helperMic === micNode) return true;
-    stop();
+    await stop();
     try {
       const file = path.join(dir, CONFIG_FILE);
       fs.mkdirSync(dir, { recursive: true });
