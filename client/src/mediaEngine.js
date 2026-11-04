@@ -13,7 +13,13 @@ const VOICE_HOLD_MS = 400; // keep the indicator on between words
 const METER_FLOOR_DB = -65;
 const METER_CEILING_DB = -15;
 
-const AUDIO_CONSTRAINTS = { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1, sampleRate: AUDIO_SAMPLE_RATE };
+// Echo cancellation for the microphone. Plain `true` only knows Talvora's own playback, so music from
+// any other program reached people through the speakers and the microphone, sharing or not. 'all' uses
+// everything the computer plays as its reference (measured with music from another program: -33 dB
+// through the microphone with `true`, -57 dB with 'all'; the room alone is -48 dB). Windows has it;
+// Linux does not, and there this falls back to `true`.
+const MIC_ECHO_CANCELLATION = { ideal: 'all' };
+const AUDIO_CONSTRAINTS = { echoCancellation: MIC_ECHO_CANCELLATION, noiseSuppression: true, autoGainControl: true, channelCount: 1, sampleRate: AUDIO_SAMPLE_RATE };
 // The computer's sound shared with the screen: its own track, never through the microphone's speech
 // processing (noise suppression, automatic gain and echo cancellation all damage music). On Windows the
 // main process captures it without Talvora's own playback (the others' voices), so it needs no echo
@@ -145,7 +151,7 @@ class MediaEngine {
       } catch (err) {
         console.warn('getUserMedia failed, trying audio only fallback:', err);
         try {
-          stream = audio ? await navigator.mediaDevices.getUserMedia({ audio: true, video: false }) : new MediaStream();
+          stream = audio ? await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: MIC_ECHO_CANCELLATION }, video: false }) : new MediaStream();
         } catch (audioErr) {
           console.warn('Microphone access also failed or unavailable:', audioErr);
           // Create an empty dummy MediaStream so app functions without crashing on headless systems

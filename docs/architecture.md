@@ -161,6 +161,15 @@ Microphone audio passes through a high-pass filter and RNNoise neural noise supp
 (`client/src/vendor/rnnoise`, AudioWorklet + WebAssembly) before being sent. The speaking
 indicator uses the cleaned signal: RMS above -50 dBFS, held for 400 ms between words.
 
+**Echo cancellation** on the microphone asks for `echoCancellation: { ideal: 'all' }` (Chromium 156). Plain `true`
+only knows what Talvora itself plays, so another program's music reached people through the speakers and the
+microphone, sharing or not, and twice while sharing. `'all'` uses a loopback of everything the computer plays as the
+reference. Measured in a real call on Windows (real speakers and microphone, music from another program, level the
+other person receives from the microphone track, 90th percentile): -24 dB before, -90 dB after, with the shared sound
+intact at -18 dB and a simulated voice unchanged at -18 dB with and without music. Linux Chromium only offers
+`true`, `false` and `remote-only`, so there it falls back to `true`: other programs' sound can still reach the microphone
+from speakers. System sound is otherwise only ever sent on the shared-sound track, which exists while sharing.
+
 **Shared sound** (always shared with the screen when the system offers it): the main process grants system
 audio with the screen. On Windows it asks for `loopbackWithoutChrome` (Electron 45; Electron 33 ignored it): the
 capture leaves out everything Talvora itself plays (the others' voices and shared sound), measured -49 -> -110 dB

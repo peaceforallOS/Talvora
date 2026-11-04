@@ -193,6 +193,32 @@ const MediaEngine = require('../src/mediaEngine');
   sharer.destroy();
   console.log('✓ Test 9 Passed: Screen-sharing quality follows the measured bandwidth, without flickering');
 
+  // 10. However the microphone opens, echo cancellation covers everything the computer plays: with
+  // plain `true`, music from other programs reached people through the speakers and the microphone
+  const asksForAll = (label) => assert.deepStrictEqual(lastConstraints.audio.echoCancellation, { ideal: 'all' }, label);
+  const micEngine = new MediaEngine();
+  await micEngine.initLocalMedia({ audio: true });
+  asksForAll('Joining');
+  await micEngine.switchMicrophone('other-mic');
+  asksForAll('Changing the microphone');
+  micEngine.destroy();
+  const lateEngine = new MediaEngine();
+  await lateEngine.initLocalMedia({ audio: false });
+  await lateEngine.startMicrophone();
+  asksForAll('Opening the microphone during the call');
+  lateEngine.destroy();
+  const realGetUserMedia = navigator.mediaDevices.getUserMedia;
+  navigator.mediaDevices.getUserMedia = async constraints => {
+    if (constraints.video) throw new Error('No camera');
+    return realGetUserMedia(constraints);
+  };
+  const fallbackEngine = new MediaEngine();
+  await fallbackEngine.initLocalMedia({ audio: true, video: true });
+  asksForAll('Falling back to audio only');
+  fallbackEngine.destroy();
+  navigator.mediaDevices.getUserMedia = realGetUserMedia;
+  console.log('✓ Test 10 Passed: Every way of opening the microphone cancels all sound the computer plays');
+
   console.log('\n========================================');
   console.log(' ALL CAMERA TESTS PASSED!               ');
   console.log('========================================');
