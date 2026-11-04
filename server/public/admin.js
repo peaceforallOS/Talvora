@@ -468,52 +468,23 @@
       return;
     }
 
+    // Two lists: whoever is on stage (the admin first), then everyone else. While searching, a list
+    // without a match is left out.
+    const onStage = filtered.filter(u => u.onStage).sort((a, b) => (b.role === 'admin') - (a.role === 'admin'));
+    const audience = filtered.filter(u => !u.onStage);
+
     usersTbody.innerHTML = '';
-    filtered.forEach(user => {
-      const tr = document.createElement('tr');
-      const isAdmin = user.role === 'admin';
-
-      const media = user.mediaState || {};
-      tr.innerHTML = `
-        <td>
-          <div class="user-cell">
-            <div class="avatar">${escapeHtml(user.username.charAt(0).toUpperCase())}</div>
-            <div class="user-meta">
-              <span class="user-name">${escapeHtml(user.username)}</span>
-              <span class="user-sub">
-                <span class="media-chips">
-                  <span class="media-chip ${media.audio ? 'is-on' : ''}" title="${media.audio ? 'Mic on' : 'Mic off'}">${iconSvg(media.audio ? 'mic' : 'mic-off')}</span>
-                  <span class="media-chip ${media.video ? 'is-on' : ''}" title="${media.video ? 'Camera on' : 'Camera off'}">${iconSvg(media.video ? 'video' : 'video-off')}</span>
-                  ${media.screen ? `<span class="media-chip is-on" title="Sharing screen">${iconSvg('screen')}</span>` : ''}
-                </span>
-                <span>Joined ${escapeHtml(formatJoined(user.joinedAt))}</span>
-              </span>
-            </div>
-          </div>
-        </td>
-        <td>
-          <span class="badge ${isAdmin ? 'badge-admin' : 'badge-user'}">${escapeHtml(user.role)}</span>
-        </td>
-        <td class="td-perm">${createSwitch(user.id, 'can_audio', user.permissions.can_audio, isAdmin)}</td>
-        <td class="td-perm">${createSwitch(user.id, 'can_video', user.permissions.can_video, isAdmin)}</td>
-        <td class="td-perm">${createSwitch(user.id, 'can_screen', user.permissions.can_screen, isAdmin)}</td>
-        <td class="td-perm">${createSwitch(user.id, 'can_chat', user.permissions.can_chat, isAdmin)}</td>
-        <td class="td-perm">${createSwitch(user.id, 'can_invite', user.permissions.can_invite, isAdmin)}</td>
-        <td class="td-actions">
-          ${
-            isAdmin
-              ? `<span class="protected-tag">${iconSvg('lock')}Protected</span>`
-              : `<div class="action-buttons">
-                  <button class="btn btn-sm btn-ghost-danger btn-kick" data-id="${escapeHtml(user.id)}" data-name="${escapeHtml(user.username)}" title="Disconnect now; their invite link keeps working">${iconSvg('log-out')}Kick</button>
-                  <button class="btn btn-sm btn-danger btn-remove-user" data-id="${escapeHtml(user.id)}" data-name="${escapeHtml(user.username)}" title="Disconnect and permanently disable their invite link">${iconSvg('user-x')}Remove User</button>
-                </div>`
-          }
-        </td>
-      `;
-      setAvatarHue(tr.querySelector('.avatar'), user.username);
-
-      usersTbody.appendChild(tr);
-    });
+    if (onStage.length > 0 || !filter) {
+      usersTbody.appendChild(createSectionRow('video', 'On stage', onStage.length));
+      onStage.forEach(user => usersTbody.appendChild(createUserRow(user)));
+    }
+    if (audience.length > 0 || !filter) {
+      usersTbody.appendChild(createSectionRow('users', 'Audience', audience.length));
+      if (audience.length === 0) {
+        usersTbody.insertAdjacentHTML('beforeend', '<tr class="users-section-empty"><td colspan="8">Everyone in the room is on stage.</td></tr>');
+      }
+      audience.forEach(user => usersTbody.appendChild(createUserRow(user)));
+    }
 
     // Attach switch listeners
     usersTbody.querySelectorAll('.perm-toggle').forEach(input => {
@@ -590,6 +561,58 @@
         }
       });
     });
+  }
+
+  function createSectionRow(icon, title, count) {
+    const tr = document.createElement('tr');
+    tr.className = 'users-section';
+    tr.innerHTML = `<td colspan="8">${iconSvg(icon)}<span>${title}</span><span class="users-section-count">${count}</span></td>`;
+    return tr;
+  }
+
+  function createUserRow(user) {
+    const tr = document.createElement('tr');
+    const isAdmin = user.role === 'admin';
+
+    const media = user.mediaState || {};
+    tr.innerHTML = `
+      <td>
+        <div class="user-cell">
+          <div class="avatar">${escapeHtml(user.username.charAt(0).toUpperCase())}</div>
+          <div class="user-meta">
+            <span class="user-name">${escapeHtml(user.username)}</span>
+            <span class="user-sub">
+              <span class="media-chips">
+                <span class="media-chip ${media.audio ? 'is-on' : ''}" title="${media.audio ? 'Mic on' : 'Mic off'}">${iconSvg(media.audio ? 'mic' : 'mic-off')}</span>
+                <span class="media-chip ${media.video ? 'is-on' : ''}" title="${media.video ? 'Camera on' : 'Camera off'}">${iconSvg(media.video ? 'video' : 'video-off')}</span>
+                ${media.screen ? `<span class="media-chip is-on" title="Sharing screen">${iconSvg('screen')}</span>` : ''}
+              </span>
+              <span>Joined ${escapeHtml(formatJoined(user.joinedAt))}</span>
+            </span>
+          </div>
+        </div>
+      </td>
+      <td>
+        <span class="badge ${isAdmin ? 'badge-admin' : 'badge-user'}">${escapeHtml(user.role)}</span>
+      </td>
+      <td class="td-perm">${createSwitch(user.id, 'can_audio', user.permissions.can_audio, isAdmin)}</td>
+      <td class="td-perm">${createSwitch(user.id, 'can_video', user.permissions.can_video, isAdmin)}</td>
+      <td class="td-perm">${createSwitch(user.id, 'can_screen', user.permissions.can_screen, isAdmin)}</td>
+      <td class="td-perm">${createSwitch(user.id, 'can_chat', user.permissions.can_chat, isAdmin)}</td>
+      <td class="td-perm">${createSwitch(user.id, 'can_invite', user.permissions.can_invite, isAdmin)}</td>
+      <td class="td-actions">
+        ${
+          isAdmin
+            ? `<span class="protected-tag">${iconSvg('lock')}Protected</span>`
+            : `<div class="action-buttons">
+                <button class="btn btn-sm btn-ghost-danger btn-kick" data-id="${escapeHtml(user.id)}" data-name="${escapeHtml(user.username)}" title="Disconnect now; their invite link keeps working">${iconSvg('log-out')}Kick</button>
+                <button class="btn btn-sm btn-danger btn-remove-user" data-id="${escapeHtml(user.id)}" data-name="${escapeHtml(user.username)}" title="Disconnect and permanently disable their invite link">${iconSvg('user-x')}Remove User</button>
+              </div>`
+        }
+      </td>
+    `;
+    setAvatarHue(tr.querySelector('.avatar'), user.username);
+    return tr;
   }
 
   function createSwitch(userId, permKey, checked, disabled) {

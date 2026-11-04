@@ -110,6 +110,7 @@ button { cursor: pointer; }
 
 .btn-danger { background: var(--danger); color: #fff; box-shadow: 0 6px 18px -8px rgba(242, 85, 90, 0.8); }
 .btn-danger:hover { background: var(--danger-hover); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
 
 .btn-ghost-danger {
   background: transparent;
@@ -547,6 +548,29 @@ button { cursor: pointer; }
 .action-buttons { display: inline-flex; gap: 0.45rem; justify-content: flex-end; flex-wrap: wrap; }
 .users-table tbody tr { transition: background-color 0.15s; }
 .users-table tbody tr:hover { background: rgba(255, 255, 255, 0.025); }
+.users-table tbody tr.users-section:hover,
+.users-table tbody tr.users-section-empty:hover { background: transparent; }
+.users-section td {
+  padding-top: 0.75rem;
+  padding-bottom: 0.55rem;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.users-section .icon { width: 14px; height: 14px; margin-right: 0.45rem; vertical-align: -2px; }
+.users-section-count {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0 0.45rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 0.72rem;
+  letter-spacing: 0;
+}
+.users-section-empty td { color: var(--text-faint); font-size: 0.8rem; }
 
 .user-cell { display: flex; align-items: center; gap: 0.8rem; min-width: 220px; }
 .avatar {

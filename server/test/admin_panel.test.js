@@ -187,6 +187,15 @@ async function runAdminPanelTests() {
   }
   console.log('✓ Test 7 Passed: Participants carry audio, video, screen, chat and invite permissions, each with its own switch');
 
+  // 7b. The panel lists people by whether they are on stage: brought up, then sent back
+  const stageOf = async id => (await httpRequest({ host: 'localhost', port: 8098, path: '/api/admin/info', method: 'GET' })).json.participants.find(u => u.id === id).onStage;
+  assert.strictEqual(await stageOf(tester1.id), false, 'Invited people start in the audience');
+  roomManager.setStage(tester1.id, true);
+  assert.strictEqual(await stageOf(tester1.id), true, 'The panel must see who is on stage');
+  roomManager.setStage(tester1.id, false);
+  assert.strictEqual(await stageOf(tester1.id), false);
+  console.log('✓ Test 7b Passed: The panel knows who is on stage');
+
   // 8. Test Kick User API
   const kickRes = await httpRequest({
     host: 'localhost',

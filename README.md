@@ -8,7 +8,7 @@ Private, self-hosted video calls for Windows and Linux. You run the server; only
 - **A stage:** invited people join the audience, which sees and hears the stage. The admin brings someone on stage with a checkmark in the People list, or by accepting their raised hand; on stage, the permissions the admin gave them apply
 - **The admin opens the room:** invited people can only join while the admin is in the call. If the admin leaves, everyone else is removed after 10 seconds unless the admin comes back in time; the admin's app reconnects by itself after a dropped connection
 - **Graphics card chosen automatically:** with a dedicated card (NVIDIA, AMD Radeon, Intel Arc) Talvora draws and decodes video on it; with only integrated graphics it draws without the GPU and stays light on memory: about 65 MB on the join screen and 120-250 MB in a call
-- **Management panel:** live permissions (audio, video, screen sharing, chat, invite; invited people start without audio, video and screen sharing), kick and remove, clearing the chat history, network and port diagnostics
+- **Management panel:** live permissions (audio, video, screen sharing, chat, invite; invited people start without audio, video and screen sharing), separate lists for people on stage and in the audience, kick and remove, clearing the chat history, network and port diagnostics
 - **Server calculator** (on the app's join screen): enter how many people join a call and see the CPU, RAM, port speed and traffic to rent, based on measured load tests
 - **Updates:** apps and servers notice new releases by themselves; every release is signed and checked before it is installed
 

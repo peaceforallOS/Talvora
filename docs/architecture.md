@@ -256,6 +256,7 @@ Each user entity in the room state contains a `permissions` object (an invited u
 - When `can_audio` is `false`, the server keeps the user's announced audio off and the client mutes its input.
 - When `can_video` is `false`, the server keeps the announced video off and the client closes the camera.
 - When `can_screen` is `false`, the server keeps the announced screen sharing off and the client stops any screen share.
+- The management panel lists participants in two groups by `onStage`: **On stage** (the admin first) and **Audience**. It refreshes from `/api/admin/info` every 1.5 seconds, so people move as the admin brings them up.
 - When `can_chat` is set to `false`, client disables the chat input box with a clear banner. Saved messages stay readable.
 - When `can_invite` is set to `true` by Admin, the user's client automatically reveals the "Invite" button.
 
