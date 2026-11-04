@@ -261,7 +261,7 @@ class ChatController {
           <span>${this.formatTime(msg.timestamp)}</span>
         </div>
       </div>
-      <div class="bubble-text">${this.escape(msg.text)}</div>
+      <div class="bubble-text" dir="auto">${this.escape(msg.text)}</div>
     `;
 
     const copyBtn = document.createElement('button');

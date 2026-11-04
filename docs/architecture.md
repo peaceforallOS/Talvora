@@ -265,6 +265,10 @@ the room can be sent to. Unread messages are counted per person; what has been r
 `localStorage`, per server and username, as the time of the last message read in each conversation, because the
 server does not track it. Old public messages never count as unread when joining.
 
+The typing box and each message use `dir="auto"`: the first strong character sets the direction, so a message that
+starts in Persian stays right to left with English words in it, and the other way round. Digits, emoji and punctuation
+are not strong characters, so they do not decide it.
+
 ---
 
 ## 4. Permission Model & Management Schema

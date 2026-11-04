@@ -197,6 +197,13 @@ assert.strictEqual(t.el.directBadge.hiddenClass, true);
 assert.strictEqual(t.rows(), 0);
 console.log('✓ Test 7 Passed: Clearing the history clears the conversations and counts');
 
+// 8. Each message's direction comes from its first word (Persian: right to left), typing and sent alike
+const row = t.chat.createMessageRow(pub('Ali', 'سلام hello'), 'Me');
+assert.ok(row.children[0].innerHTML.includes('class="bubble-text" dir="auto"'), 'A sent message finds its own direction');
+const page = require('fs').readFileSync(require('path').join(__dirname, '../src/index.html'), 'utf8');
+assert.ok(/id="chat-input"[^>]*dir="auto"/.test(page), 'The typing box too');
+console.log('✓ Test 8 Passed: Messages and the typing box take their direction from the first word');
+
 console.log('\n========================================');
 console.log(' ALL CHAT CONVERSATION TESTS PASSED!    ');
 console.log('========================================');
