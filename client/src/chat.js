@@ -242,13 +242,13 @@ class ChatController {
     if (!msg && !selected) return;
     e.preventDefault();
 
-    const items = [{ label: 'Copy', disabled: !selected, action: () => this.copyText(selected) }];
-    if (msg) {
-      items.push({ label: 'Copy message', action: () => this.copyText(msg.text) });
-      items.push({ label: 'Select message', action: () => this.selectMessage(row) });
-      if (!this.input.disabled) {
-        items.push({ label: 'Quote in reply', action: () => this.quoteInReply(selected || msg.text) });
-      }
+    // Highlighted text: only copying that part. Otherwise the message itself.
+    const items = [];
+    if (selected) {
+      items.push({ label: 'Copy', action: () => this.copyText(selected) });
+    } else {
+      if (!this.input.disabled) items.push({ label: 'Reply', action: () => this.reply(msg.text) });
+      items.push({ label: 'Copy', action: () => this.copyText(msg.text) });
     }
     this.showMenu(items, e.clientX, e.clientY);
   }
@@ -281,15 +281,7 @@ class ChatController {
     ], e.clientX, e.clientY);
   }
 
-  selectMessage(row) {
-    const range = document.createRange();
-    range.selectNodeContents(row.querySelector('.bubble-text'));
-    const selection = window.getSelection();
-    selection.removeAllRanges();
-    selection.addRange(range);
-  }
-
-  quoteInReply(text) {
+  reply(text) {
     const flat = text.replace(/\s+/g, ' ').trim();
     const quote = flat.length > 200 ? `${flat.slice(0, 200)}…` : flat;
     this.input.value = `"${quote}" ${this.input.value}`;
