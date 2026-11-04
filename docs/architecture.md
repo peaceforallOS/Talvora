@@ -302,6 +302,7 @@ Each user entity in the room state contains a `permissions` object (an invited u
 - When `can_audio` is `false`, the server keeps the user's announced audio off and the client mutes its input.
 - When `can_video` is `false`, the server keeps the announced video off and the client closes the camera.
 - When `can_screen` is `false`, the server keeps the announced screen sharing off and the client stops any screen share.
+- A panel page left open during a server update reloads itself when the server's version changes, so it never keeps running the old panel.
 - **All users** (`POST /api/admin/permissions/all`, `{ permission, value }`): the panel's top row sets one permission for all
   invited users. It is saved as `globalPermissions` in place of that default, written onto every saved per-person choice,
   and applied to everyone in the room. People who join later get it; one person can still be changed afterwards, and a

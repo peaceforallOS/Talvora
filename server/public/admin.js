@@ -284,8 +284,16 @@
     releaseProgress.classList.remove('hidden');
   }
 
+  let pageVersion = null; // the server's version when this page loaded
+
   function renderRelease(release) {
     if (!release) return;
+    // The server was updated while this page stayed open: it still runs the old panel, so reload it
+    if (pageVersion && release.current !== pageVersion) {
+      window.location.reload();
+      return;
+    }
+    pageVersion = release.current;
     lastRelease = release;
     renderVersionLine(release);
     const update = release.update;
