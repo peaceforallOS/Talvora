@@ -166,9 +166,20 @@ only knows what Talvora itself plays, so another program's music reached people 
 microphone, sharing or not, and twice while sharing. `'all'` uses a loopback of everything the computer plays as the
 reference. Measured in a real call on Windows (real speakers and microphone, music from another program, level the
 other person receives from the microphone track, 90th percentile): -24 dB before, -90 dB after, with the shared sound
-intact at -18 dB and a simulated voice unchanged at -18 dB with and without music. Linux Chromium only offers
-`true`, `false` and `remote-only`, so there it falls back to `true`: other programs' sound can still reach the microphone
-from speakers. System sound is otherwise only ever sent on the shared-sound track, which exists while sharing.
+intact at -18 dB and a simulated voice unchanged at -18 dB with and without music. System sound is otherwise only ever
+sent on the shared-sound track, which exists while sharing.
+
+Linux Chromium only offers `true`, `false` and `remote-only`, so there `client/linuxEchoCancel.js` does the same job one
+step earlier: while a call uses the microphone, a helper process (`pipewire -c`) runs PipeWire's echo module in monitor
+mode, with the default speakers' monitor as its reference and the chosen microphone as its input. Nothing is rerouted
+and no default device changes; it only adds one input device, "Talvora clean microphone", which the page opens and hides
+from the settings. The helper stops when the call ends and, because it watches its stdin, when Talvora dies. It needs
+PipeWire 0.3.66 or later with the WebRTC echo plugin; without them the microphone is opened as before and speakers can
+still reach it (no sound is rerouted on PulseAudio). Measured in a real Linux call on a private PipeWire with a simulated
+room (speakers reach the microphone 60 ms later, about -34 dB): music through the microphone -29 -> -100 dB, voice
+unchanged. Under heavy CPU load audio dropouts let bursts through: while sharing in WSL (no GPU, no real-time priority)
+about -27 dB at peaks against -19 dB for the shared sound. A larger buffer (`node.latency`) made it worse, and a second
+reader of the monitor changed nothing. Not yet measured on real Linux hardware.
 
 **Shared sound** (always shared with the screen when the system offers it): the main process grants system
 audio with the screen. On Windows it asks for `loopbackWithoutChrome` (Electron 45; Electron 33 ignored it): the

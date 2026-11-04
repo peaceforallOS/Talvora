@@ -11,9 +11,11 @@ const { integrateAppImage } = require('./linuxIntegration');
 const firewall = require('./firewall');
 const updater = require('./updater');
 const { detectGpu } = require('./gpuDetect');
+const { createEchoCancel } = require('./linuxEchoCancel');
 const net = require('net');
 
 let mainWindow = null;
+const echoCancel = createEchoCancel();
 
 // Chromium's sandbox needs unprivileged user namespaces (blocked by AppArmor on Ubuntu 23.10+)
 // or a root-owned setuid chrome-sandbox helper, which an AppImage can never provide.
@@ -174,6 +176,16 @@ ipcMain.handle('firewall-allow', (event, origin) => {
   }
 });
 
+// --- Echo cancellation on Linux while a call uses the microphone (see linuxEchoCancel.js) ---
+ipcMain.handle('echo-cancel-start', (event, micLabel) => {
+  if (!event.senderFrame || !isAppUrl(event.senderFrame.url)) return false;
+  return echoCancel.start(app.getPath('userData'), typeof micLabel === 'string' ? micLabel : null);
+});
+
+ipcMain.handle('echo-cancel-stop', event => {
+  if (event.senderFrame && isAppUrl(event.senderFrame.url)) echoCancel.stop();
+});
+
 // --- Updates from the project's GitHub releases (see updater.js). Checked, downloaded and
 // verified here; the page only shows the offer and the progress.
 let offeredUpdate = null;
@@ -276,7 +288,10 @@ app.whenReady().then(() => {
 });
 
 // The PowerShell kept ready for the firewall's administrator prompt (see firewall.js)
-app.on('will-quit', () => firewall.releaseElevation());
+app.on('will-quit', () => {
+  firewall.releaseElevation();
+  echoCancel.stop();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

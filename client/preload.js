@@ -10,6 +10,9 @@ contextBridge.exposeInMainWorld('videocallNative', {
   // This computer's firewall: check it, and (after an administrator prompt) allow Talvora
   firewallStatus: () => ipcRenderer.invoke('firewall-status'),
   firewallAllow: origin => ipcRenderer.invoke('firewall-allow', origin),
+  // Linux: keep other programs' sound out of the microphone during a call (see linuxEchoCancel.js)
+  echoCancelStart: micLabel => ipcRenderer.invoke('echo-cancel-start', micLabel),
+  echoCancelStop: () => ipcRenderer.invoke('echo-cancel-stop'),
   // Updates from GitHub releases: checked, downloaded and verified by the app itself (see updater.js)
   updateCheck: () => ipcRenderer.invoke('update-check'),
   updateInstall: () => ipcRenderer.invoke('update-install'),

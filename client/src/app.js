@@ -1498,7 +1498,7 @@
 
       devices.forEach(d => {
         const select = selects[d.kind];
-        if (!select) return;
+        if (!select || d.label === MediaEngine.CLEAN_MIC_LABEL) return;
         const opt = document.createElement('option');
         opt.value = d.deviceId;
         opt.textContent = d.label || `${d.kind} (${d.deviceId.slice(0, 5)}...)`;

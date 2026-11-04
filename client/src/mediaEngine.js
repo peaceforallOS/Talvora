@@ -17,8 +17,11 @@ const METER_CEILING_DB = -15;
 // any other program reached people through the speakers and the microphone, sharing or not. 'all' uses
 // everything the computer plays as its reference (measured with music from another program: -33 dB
 // through the microphone with `true`, -57 dB with 'all'; the room alone is -48 dB). Windows has it;
-// Linux does not, and there this falls back to `true`.
+// Linux does not and falls back to `true`: there PipeWire does this before Chromium, on a device of its
+// own (see linuxEchoCancel.js).
 const MIC_ECHO_CANCELLATION = { ideal: 'all' };
+const CLEAN_MIC_LABEL = 'Talvora clean microphone';
+const CLEAN_MIC_WAIT_MS = 3000;
 const AUDIO_CONSTRAINTS = { echoCancellation: MIC_ECHO_CANCELLATION, noiseSuppression: true, autoGainControl: true, channelCount: 1, sampleRate: AUDIO_SAMPLE_RATE };
 // The computer's sound shared with the screen: its own track, never through the microphone's speech
 // processing (noise suppression, automatic gain and echo cancellation all damage music). On Windows the
@@ -143,15 +146,16 @@ class MediaEngine {
     if (!audio && !video) {
       stream = new MediaStream();
     } else {
+      const micDevice = audio ? await this.cleanMicrophone(this.preferredDevices.audioinput) : null;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          audio: audio ? { ...AUDIO_CONSTRAINTS, ...preferred('audioinput') } : false,
+          audio: audio ? { ...AUDIO_CONSTRAINTS, ...(micDevice || preferred('audioinput')) } : false,
           video: video ? { ...VIDEO_CONSTRAINTS, ...preferred('videoinput') } : false
         });
       } catch (err) {
         console.warn('getUserMedia failed, trying audio only fallback:', err);
         try {
-          stream = audio ? await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: MIC_ECHO_CANCELLATION }, video: false }) : new MediaStream();
+          stream = audio ? await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: MIC_ECHO_CANCELLATION, ...micDevice }, video: false }) : new MediaStream();
         } catch (audioErr) {
           console.warn('Microphone access also failed or unavailable:', audioErr);
           // Create an empty dummy MediaStream so app functions without crashing on headless systems
@@ -387,7 +391,8 @@ class MediaEngine {
     const generation = this.generation;
     this.micStarting = (async () => {
       const preferred = this.preferredDevices.audioinput ? { deviceId: { ideal: this.preferredDevices.audioinput } } : {};
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { ...AUDIO_CONSTRAINTS, ...preferred } });
+      const clean = await this.cleanMicrophone(this.preferredDevices.audioinput);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { ...AUDIO_CONSTRAINTS, ...(clean || preferred) } });
       if (generation !== this.generation) {
         stream.getTracks().forEach(t => t.stop());
         return null;
@@ -411,6 +416,32 @@ class MediaEngine {
     } finally {
       this.micStarting = null;
     }
+  }
+
+  /**
+   * Linux app: starts echo cancellation for the chosen microphone (none: the default) and resolves the
+   * constraint that opens the resulting device. Resolves null wherever this is not available (Windows,
+   * browsers, no suitable PipeWire): the microphone is then opened as usual.
+   */
+  async cleanMicrophone(chosenId) {
+    const native = typeof window !== 'undefined' ? window.videocallNative : null;
+    if (OWN_SOUND_EXCLUDED || !native?.echoCancelStart) return null;
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const chosen = devices.find(d => d.kind === 'audioinput' && d.deviceId === chosenId && d.deviceId !== 'default');
+      if (!(await native.echoCancelStart(chosen?.label || null))) return null;
+      const giveUpAt = performance.now() + CLEAN_MIC_WAIT_MS;
+      while (performance.now() < giveUpAt) {
+        const found = (await navigator.mediaDevices.enumerateDevices()).find(d => d.kind === 'audioinput' && d.label === CLEAN_MIC_LABEL);
+        if (found) return { deviceId: { exact: found.deviceId } };
+        await new Promise(resolve => setTimeout(resolve, 150));
+      }
+      console.warn('The echo-cancelled microphone did not appear; using the microphone directly.');
+      native.echoCancelStop();
+    } catch (e) {
+      console.warn('Echo cancellation unavailable:', e);
+    }
+    return null;
   }
 
   async createNoiseSuppressor(ctx) {
@@ -550,7 +581,8 @@ class MediaEngine {
       this.setPreferredDevices({ audioinput: deviceId });
       return null;
     }
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: { ...AUDIO_CONSTRAINTS, deviceId: { exact: deviceId } } });
+    const clean = await this.cleanMicrophone(deviceId);
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { ...AUDIO_CONSTRAINTS, ...(clean || { deviceId: { exact: deviceId } }) } });
     const track = stream.getAudioTracks()[0];
     track.enabled = current ? current.enabled : true;
     this.setPreferredDevices({ audioinput: deviceId });
@@ -976,6 +1008,7 @@ class MediaEngine {
     this.rawAudioTrack = null;
     this.micSource = null;
     this.micInput = null;
+    if (typeof window !== 'undefined') window.videocallNative?.echoCancelStop?.();
     if (this.localStream) {
       this.localStream.getTracks().forEach(t => t.stop());
       this.localStream = null;
@@ -997,6 +1030,8 @@ class MediaEngine {
     this.remoteStreams.clear();
   }
 }
+
+MediaEngine.CLEAN_MIC_LABEL = CLEAN_MIC_LABEL;
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = MediaEngine;
