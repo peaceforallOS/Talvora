@@ -1361,6 +1361,67 @@ input[type="range"]::-moz-range-thumb {
   font-size: 0.75rem;
 }
 
+.chat-reply-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.5rem 0.75rem 0;
+  padding: 0.35rem 0.4rem 0.35rem 0.6rem;
+  border-radius: 10px;
+  border-inline-start: 3px solid var(--accent);
+  background: var(--surface-2);
+  font-size: 0.78rem;
+}
+.chat-reply-body { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
+.chat-reply-body strong { color: #cdc6ff; font-weight: 600; }
+.chat-reply-body span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text-muted); }
+.chat-reply-cancel {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.chat-reply-cancel:hover { background: var(--surface-3); color: var(--text); }
+
+.reply-quote {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  margin: 0.15rem 0 0.3rem;
+  padding: 0.25rem 0.5rem;
+  border: 0;
+  border-inline-start: 3px solid var(--accent);
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.18);
+  color: inherit;
+  font: inherit;
+  font-size: 0.76rem;
+  line-height: 1.3;
+  text-align: start;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.reply-quote:hover { background: rgba(0, 0, 0, 0.3); }
+.reply-quote strong { color: #cdc6ff; font-weight: 600; }
+.reply-quote span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; opacity: 0.85; }
+.chat-bubble.outgoing .reply-quote { border-inline-start-color: rgba(255, 255, 255, 0.85); background: rgba(255, 255, 255, 0.16); }
+.chat-bubble.outgoing .reply-quote:hover { background: rgba(255, 255, 255, 0.26); }
+.chat-bubble.outgoing .reply-quote strong { color: #fff; }
+
+.chat-row.flash { animation: reply-flash 1.6s ease-out; border-radius: 12px; }
+@keyframes reply-flash {
+  0%, 45% { background: rgba(124, 108, 255, 0.38); box-shadow: 0 0 0 6px rgba(124, 108, 255, 0.38); }
+  100% { background: transparent; box-shadow: 0 0 0 6px transparent; }
+}
+
 .chat-input-bar {
   display: flex;
   align-items: center;

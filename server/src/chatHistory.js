@@ -10,6 +10,7 @@ const fs = require('fs');
 
 const MAX_MESSAGES = 5000; // the oldest go first, so the file and what a join downloads stay bounded
 const COMPACT_MARGIN = 500; // rewrite the file only once in a while, not on every message
+const QUOTE_LENGTH = 200; // of a replied-to message, kept in the reply so it survives the original being dropped
 
 class ChatHistory {
   constructor({ file, maxMessages = MAX_MESSAGES } = {}) {
@@ -67,6 +68,27 @@ class ChatHistory {
     const isThem = name => String(name).toLowerCase() === canonical;
     return this.messages.slice(-this.maxMessages).filter(m =>
       m.mode !== 'direct' || isThem(m.senderUsername) || (m.recipientUsernames || []).some(isThem));
+  }
+
+  /**
+   * The quote for a reply, built here so it always matches the saved message, or null. Only a message
+   * from the same conversation can be quoted: a reply must not carry a direct message anywhere else.
+   */
+  quoteFor(id, { mode, username, peerUsername }) {
+    if (typeof id !== 'string') return null;
+    const original = this.messages.find(m => m.id === id);
+    if (!original || original.mode !== mode) return null;
+    if (mode === 'direct') {
+      const pair = names => names.map(name => String(name).toLowerCase()).sort().join('\n');
+      const between = pair([original.senderUsername, ...(original.recipientUsernames || [])]);
+      if (between !== pair([username, peerUsername])) return null;
+    }
+    const flat = String(original.text).replace(/\s+/g, ' ').trim();
+    return {
+      id: original.id,
+      senderUsername: original.senderUsername,
+      text: flat.length > QUOTE_LENGTH ? `${flat.slice(0, QUOTE_LENGTH)}…` : flat
+    };
   }
 
   get count() {

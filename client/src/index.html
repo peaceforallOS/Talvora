@@ -217,6 +217,16 @@
               Your chat privileges have been revoked by the administrator.
             </div>
 
+            <div id="chat-reply-bar" class="chat-reply-bar hidden">
+              <div class="chat-reply-body">
+                <strong id="chat-reply-name" dir="auto"></strong>
+                <span id="chat-reply-text" dir="auto"></span>
+              </div>
+              <button type="button" id="chat-reply-cancel" class="chat-reply-cancel" title="Cancel reply" aria-label="Cancel reply">
+                <svg class="icon"><use href="#i-x"/></svg>
+              </button>
+            </div>
+
             <form id="chat-form" class="chat-input-bar">
               <input type="text" id="chat-input" dir="auto" placeholder="Send a message…" autocomplete="off">
               <button type="submit" id="btn-send-chat" class="send-btn" title="Send">

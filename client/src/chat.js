@@ -8,6 +8,7 @@
 const EMPTY_PUBLIC = 'No messages yet.\nSay hello to the room 👋';
 const EMPTY_NO_PERSON = 'Choose someone above\nto see your conversation.';
 const READ_KEY = 'talvora.directRead';
+const REPLY_FLASH_MS = 1600;
 
 class ChatController {
   constructor(options = {}) {
@@ -21,6 +22,10 @@ class ChatController {
     this.unreadBadge = options.unreadBadge;
     this.revokedBanner = options.revokedBanner;
     this.publicBadge = options.publicBadge; // unread counts on the Everyone and Direct buttons
+    this.replyBar = options.replyBar; // the preview above the typing box while replying
+    this.replyName = options.replyName;
+    this.replyText = options.replyText;
+    this.replyCancel = options.replyCancel;
     this.directBadge = options.directBadge;
     this.onNotice = options.onNotice || (() => {}); // shown in the app, never as a native alert()
 
@@ -38,6 +43,9 @@ class ChatController {
     this.rowMessages = new WeakMap(); // message row -> its message
     this.menu = null;
     this.scrollPending = false;
+    this.replyingTo = null; // the message being replied to
+    this.rowsById = new Map(); // message id -> its row on screen, to jump to from a reply
+    this.flashTimer = null;
 
     this.init();
   }
@@ -45,6 +53,7 @@ class ChatController {
   init() {
     this.modeSelect.addEventListener('change', () => {
       this.currentMode = this.modeSelect.value;
+      this.cancelReply();
       this.markRead();
       this.renderView();
       this.updateRecipientsUI();
@@ -58,6 +67,13 @@ class ChatController {
 
     this.container.addEventListener('contextmenu', e => this.openMessageMenu(e));
     this.input.addEventListener('contextmenu', e => this.openInputMenu(e));
+    this.input.addEventListener('keydown', e => {
+      if (e.key === 'Escape') this.cancelReply();
+    });
+    this.replyCancel.addEventListener('click', () => {
+      this.cancelReply();
+      this.input.focus();
+    });
     document.addEventListener('mousedown', e => {
       if (this.menu && !this.menu.contains(e.target)) this.closeMenu();
     });
@@ -110,6 +126,7 @@ class ChatController {
   // Shows only the conversation that is open
   renderView() {
     this.closeMenu();
+    this.rowsById = new Map();
     const rows = document.createDocumentFragment();
     for (const msg of this.messages) {
       if (!this.belongsToView(msg)) continue;
@@ -138,6 +155,7 @@ class ChatController {
   }
 
   selectPeer(name) {
+    if (this.selectedPeer?.toLowerCase() !== String(name).toLowerCase()) this.cancelReply();
     this.selectedPeer = name;
     this.markRead();
     this.renderView();
@@ -221,9 +239,11 @@ class ChatController {
     this.core.sendChatMessage({
       mode: this.currentMode,
       recipients,
-      text
+      text,
+      ...(this.replyingTo ? { replyTo: this.replyingTo.id } : {})
     });
 
+    this.cancelReply();
     this.input.value = '';
     this.input.focus();
   }
@@ -261,8 +281,14 @@ class ChatController {
           <span>${this.formatTime(msg.timestamp)}</span>
         </div>
       </div>
+      ${msg.replyTo ? `
+        <button type="button" class="reply-quote" title="Go to this message">
+          <strong dir="auto">${this.escape(this.displayName(msg.replyTo.senderUsername))}</strong>
+          <span dir="auto">${this.escape(msg.replyTo.text)}</span>
+        </button>` : ''}
       <div class="bubble-text" dir="auto">${this.escape(msg.text)}</div>
     `;
+    if (msg.replyTo) bubble.querySelector('.reply-quote').addEventListener('click', () => this.jumpToMessage(msg.replyTo.id));
 
     const copyBtn = document.createElement('button');
     copyBtn.type = 'button';
@@ -283,7 +309,33 @@ class ChatController {
 
     row.append(bubble, copyBtn);
     this.rowMessages.set(row, msg);
+    if (msg.id) this.rowsById.set(msg.id, row);
     return row;
+  }
+
+  displayName(username) {
+    return this.isOwnMessage({ senderUsername: username }, this.username) ? 'You' : username;
+  }
+
+  // From a reply to the message it quotes: scrolled to the middle and briefly highlighted
+  jumpToMessage(id) {
+    const row = this.rowsById.get(id);
+    if (!row) {
+      this.onNotice('The original message is no longer available.');
+      return;
+    }
+    const rowBox = row.getBoundingClientRect();
+    const box = this.container.getBoundingClientRect();
+    this.container.scrollTo({
+      top: this.container.scrollTop + rowBox.top - box.top - (this.container.clientHeight - rowBox.height) / 2,
+      behavior: 'smooth'
+    });
+    if (this.flashedRow) this.flashedRow.classList.remove('flash');
+    void row.offsetWidth; // lets the highlight start again when the same message is clicked twice
+    row.classList.add('flash');
+    this.flashedRow = row;
+    clearTimeout(this.flashTimer);
+    this.flashTimer = setTimeout(() => row.classList.remove('flash'), REPLY_FLASH_MS);
   }
 
   receiveMessage(msg, username) {
@@ -362,6 +414,7 @@ class ChatController {
   // The admin cleared the history in the management panel
   clearMessages() {
     this.closeMenu();
+    this.cancelReply();
     this.messages = [];
     this.publicUnread = 0;
     this.directUnread = new Map();
@@ -403,7 +456,7 @@ class ChatController {
     if (selected) {
       items.push({ label: 'Copy', action: () => this.copyText(selected) });
     } else {
-      if (!this.input.disabled) items.push({ label: 'Reply', action: () => this.reply(msg.text) });
+      if (!this.input.disabled) items.push({ label: 'Reply', action: () => this.reply(msg) });
       items.push({ label: 'Copy', action: () => this.copyText(msg.text) });
     }
     this.showMenu(items, e.clientX, e.clientY);
@@ -437,12 +490,21 @@ class ChatController {
     ], e.clientX, e.clientY);
   }
 
-  reply(text) {
-    const flat = text.replace(/\s+/g, ' ').trim();
-    const quote = flat.length > 200 ? `${flat.slice(0, 200)}…` : flat;
-    this.input.value = `"${quote}" ${this.input.value}`;
+  // Shows the message above the typing box; what is typed next goes out as a reply to it
+  reply(msg) {
+    const c = this.container;
+    const atBottom = c.scrollHeight - c.scrollTop - c.clientHeight < 60;
+    this.replyingTo = msg;
+    this.replyName.textContent = this.displayName(msg.senderUsername);
+    this.replyText.textContent = msg.text.replace(/\s+/g, ' ').trim();
+    this.replyBar.classList.remove('hidden');
+    if (atBottom) this.scrollToBottom(); // the preview takes room from the messages
     this.input.focus();
-    this.input.setSelectionRange(this.input.value.length, this.input.value.length);
+  }
+
+  cancelReply() {
+    this.replyingTo = null;
+    this.replyBar.classList.add('hidden');
   }
 
   showMenu(items, x, y) {
@@ -481,6 +543,7 @@ class ChatController {
       this.form.querySelector('button').disabled = false;
       this.revokedBanner.classList.add('hidden');
     } else {
+      this.cancelReply();
       this.input.disabled = true;
       this.form.querySelector('button').disabled = true;
       this.revokedBanner.classList.remove('hidden');
@@ -489,6 +552,7 @@ class ChatController {
 
   reset() {
     this.closeMenu();
+    this.cancelReply();
     this.messages = [];
     this.selectedPeer = null;
     this.username = null;

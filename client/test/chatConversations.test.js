@@ -56,7 +56,8 @@ function chatFor(username) {
   const el = {
     container: new FakeElement(), input: new FakeElement(), form: new FakeElement(), modeSelect: new FakeElement(),
     recipientsBox: new FakeElement(), recipientsList: new FakeElement(), unreadBadge: new FakeElement(),
-    revokedBanner: new FakeElement(), publicBadge: new FakeElement(), directBadge: new FakeElement()
+    revokedBanner: new FakeElement(), publicBadge: new FakeElement(), directBadge: new FakeElement(),
+    replyBar: new FakeElement(), replyName: new FakeElement(), replyText: new FakeElement(), replyCancel: new FakeElement()
   };
   const notices = [];
   const chat = new ChatController({
@@ -203,6 +204,52 @@ assert.ok(row.children[0].innerHTML.includes('class="bubble-text" dir="auto"'), 
 const page = require('fs').readFileSync(require('path').join(__dirname, '../src/index.html'), 'utf8');
 assert.ok(/id="chat-input"[^>]*dir="auto"/.test(page), 'The typing box too');
 console.log('✓ Test 8 Passed: Messages and the typing box take their direction from the first word');
+
+// 9. Replying
+t = chatFor('Me');
+t.chat.updateParticipants(people, 'me');
+const original = { ...pub('Ali', 'What time is   the meeting?'), id: 'm1' };
+t.chat.receiveMessage(original, 'Me');
+t.chat.reply(original);
+assert.strictEqual(t.el.replyBar.hiddenClass, false, 'The preview appears');
+assert.strictEqual(t.el.replyName.textContent, 'Ali');
+assert.strictEqual(t.el.replyText.textContent, 'What time is the meeting?');
+assert.strictEqual(t.el.input.value, '', 'No quotation marks in the typing box');
+t.el.input.value = 'At three';
+t.chat.sendMessage();
+assert.deepStrictEqual(t.sent[0], { mode: 'public', recipients: [], text: 'At three', replyTo: 'm1' }, 'Sent as a reply');
+assert.strictEqual(t.el.replyBar.hiddenClass, true, 'The preview goes');
+t.el.input.value = 'Next';
+t.chat.sendMessage();
+assert.ok(!('replyTo' in t.sent[1]), 'The next message is not a reply');
+
+t.chat.reply(original);
+t.el.input.listeners.keydown({ key: 'Escape' });
+assert.strictEqual(t.chat.replyingTo, null, 'Escape cancels');
+t.chat.reply(original);
+t.el.replyCancel.listeners.click();
+assert.strictEqual(t.chat.replyingTo, null, 'So does the X');
+t.chat.reply(original);
+t.mode('direct');
+assert.strictEqual(t.chat.replyingTo, null, 'Leaving the conversation cancels: a reply belongs to its conversation');
+t.chat.selectPeer('Ali');
+const direct = { ...dm('Ali', 'Me', 'private'), id: 'm2' };
+t.chat.receiveMessage(direct, 'Me');
+t.chat.reply(direct);
+t.chat.selectPeer('Ali');
+assert.strictEqual(t.chat.replyingTo, direct, 'Clicking the same person keeps it');
+t.chat.selectPeer('Asghar');
+assert.strictEqual(t.chat.replyingTo, null, 'Another person cancels it');
+
+assert.strictEqual(t.chat.displayName('me'), 'You', 'One\'s own name reads You');
+assert.strictEqual(t.chat.displayName('Ali'), 'Ali');
+const noticesBefore = t.notices.length;
+t.chat.jumpToMessage('gone');
+assert.strictEqual(t.notices.length, noticesBefore + 1, 'A message that is gone says so');
+const quoted = t.chat.createMessageRow({ ...pub('Me', 'mine'), id: 'm3', replyTo: { id: 'm1', senderUsername: '<b>Ali</b>', text: '<img src=x>' } }, true);
+const quoteHtml = quoted.children[0].innerHTML;
+assert.ok(quoteHtml.includes('reply-quote') && !quoteHtml.includes('<img') && !quoteHtml.includes('<b>Ali'), 'A quote cannot inject anything into the page');
+console.log('✓ Test 9 Passed: Replying, cancelling, and quotes stay plain text');
 
 console.log('\n========================================');
 console.log(' ALL CHAT CONVERSATION TESTS PASSED!    ');

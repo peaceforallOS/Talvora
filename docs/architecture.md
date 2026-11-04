@@ -265,6 +265,13 @@ the room can be sent to. Unread messages are counted per person; what has been r
 `localStorage`, per server and username, as the time of the last message read in each conversation, because the
 server does not track it. Old public messages never count as unread when joining.
 
+**Replies:** `chat_send` may carry `replyTo` (a message id). The server builds the quote itself from its saved copy
+(`ChatHistory.quoteFor`) and adds `replyTo: { id, senderUsername, text }` to the message, with the text shortened to 200
+characters, so a client cannot invent a quote. It only quotes a message from the same conversation: public from public,
+direct from the same two people, so a reply cannot carry a direct message anywhere else. Otherwise the message goes out
+as a plain one. The quote is stored with the reply, so it survives the original leaving the saved history; clicking it then
+says the original is no longer available. Apps from before 1.20.0 ignore the field and show the message without a quote.
+
 The typing box and each message use `dir="auto"`: the first strong character sets the direction, so a message that
 starts in Persian stays right to left with English words in it, and the other way round. Digits, emoji and punctuation
 are not strong characters, so they do not decide it.

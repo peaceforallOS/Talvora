@@ -375,12 +375,13 @@ class ClientCore {
     });
   }
 
-  sendChatMessage({ mode, recipients, text }) {
+  sendChatMessage({ mode, recipients, text, replyTo }) {
     return this.send({
       type: 'chat_send',
       mode,
       recipients,
-      text
+      text,
+      replyTo
     });
   }
 

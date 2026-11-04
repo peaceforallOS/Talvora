@@ -739,6 +739,9 @@ wss.on('connection', (ws, req) => {
         ? msg.recipients.filter(id => typeof id === 'string' && roomManager.getParticipant(id))
         : [];
 
+      const recipientUsernames = mode === ChatMode.DIRECT && recipients[0] ? [roomManager.getParticipant(recipients[0]).username] : [];
+      const replyTo = chatHistory.quoteFor(msg.replyTo, { mode, username: currentUser.username, peerUsername: recipientUsernames[0] });
+
       const chatPayload = {
         type: MessageType.CHAT_DELIVER,
         message: {
@@ -747,9 +750,10 @@ wss.on('connection', (ws, req) => {
           senderUsername: currentUser.username,
           mode,
           recipients,
-          recipientUsernames: mode === ChatMode.DIRECT && recipients[0] ? [roomManager.getParticipant(recipients[0]).username] : [],
+          recipientUsernames,
           text: text.trim(),
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          ...(replyTo ? { replyTo } : {})
         }
       };
 

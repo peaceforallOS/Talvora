@@ -99,6 +99,51 @@ async function run() {
   assert.deepStrictEqual((await join('Sara', token('Sara'))).history(), [], 'Nothing comes back after clearing');
   console.log('✓ Test 3 Passed: The admin clears the history for everyone, and it stays gone');
 
+  // 3b. Replies: the server builds the quote, and only within the same conversation
+  {
+    const replyAdmin = await join('Admin', adminToken);
+    const replyAli = await join('Ali', token('Ali'));
+    const replySara = await join('Sara', token('Sara'));
+    const say = async (who, fields) => {
+      who.ws.send(JSON.stringify({ type: MessageType.CHAT_SEND, recipients: [], ...fields }));
+      await wait(120);
+      return replyAdmin.inbox.concat(who.inbox).filter(m => m.type === MessageType.CHAT_DELIVER).map(m => m.message).find(m => m.text === fields.text);
+    };
+    const pub = await say(replyAli, { mode: 'public', text: 'Original   public\nmessage' });
+    const reply = await say(replyAdmin, { mode: 'public', text: 'A reply', replyTo: pub.id });
+    assert.deepStrictEqual(reply.replyTo, { id: pub.id, senderUsername: 'Ali', text: 'Original public message' }, 'The quote comes from the saved message');
+
+    const forged = await say(replyAdmin, { mode: 'public', text: 'Forged', replyTo: { id: pub.id, senderUsername: 'Sara', text: 'Words Sara never said' } });
+    assert.ok(!forged.replyTo, 'A client cannot write its own quote');
+    const unknown = await say(replyAdmin, { mode: 'public', text: 'Unknown', replyTo: 'msg_none' });
+    assert.ok(!unknown.replyTo, 'A message that does not exist is simply not quoted');
+
+    const secret = await say(replyAdmin, { mode: 'direct', recipients: [replyAli.user.id], text: 'Secret for Ali' });
+    const leak = await say(replyAli, { mode: 'public', text: 'Public reply to something private', replyTo: secret.id });
+    assert.ok(!leak.replyTo, 'A direct message cannot be quoted in public');
+    const leakToSara = await say(replyAli, { mode: 'direct', recipients: [replySara.user.id], text: 'Forwarding', replyTo: secret.id });
+    assert.ok(!leakToSara.replyTo, 'Nor in a conversation with someone else');
+    const outsider = await say(replySara, { mode: 'direct', recipients: [replyAli.user.id], text: 'Snooping', replyTo: secret.id });
+    assert.ok(!outsider.replyTo, 'Someone outside the conversation cannot quote it by its id');
+    const publicInDirect = await say(replyAli, { mode: 'direct', recipients: [replyAdmin.user.id], text: 'Moving it', replyTo: pub.id });
+    assert.ok(!publicInDirect.replyTo, 'Replies stay in the conversation of the original');
+    const direct = await say(replyAli, { mode: 'direct', recipients: [replyAdmin.user.id], text: 'Direct reply', replyTo: secret.id });
+    assert.strictEqual(direct.replyTo.text, 'Secret for Ali', 'Within the conversation it works, from either side');
+    assert.strictEqual(direct.replyTo.senderUsername, 'Admin');
+
+    const long = await say(replyAli, { mode: 'public', text: 'x'.repeat(1000) });
+    const longReply = await say(replyAdmin, { mode: 'public', text: 'To the long one', replyTo: long.id });
+    assert.strictEqual(longReply.replyTo.text.length, 201, 'A long original is shortened in the quote');
+
+    const again = new ChatHistory({ file: HISTORY_FILE });
+    assert.strictEqual(again.messages.find(m => m.text === 'A reply').replyTo.id, pub.id, 'Replies are saved with their quote');
+    const small = new ChatHistory({ file: path.join(tempDir, 'quote.jsonl'), maxMessages: 1 });
+    assert.strictEqual(small.quoteFor(null, { mode: 'public' }), null);
+    for (const c of [replyAdmin, replyAli, replySara]) c.ws.close();
+    await wait(150);
+    console.log('✓ Test 3b Passed: Quotes come from the server and never leave their conversation');
+  }
+
   // 4. Damage and size: a line cut short is skipped, the oldest messages go first
   const file = path.join(tempDir, 'unit.jsonl');
   fs.writeFileSync(file, `${JSON.stringify({ mode: 'public', text: 'kept' })}\n{"mode":"pub`);

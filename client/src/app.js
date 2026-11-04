@@ -236,6 +236,10 @@
     revokedBanner: document.getElementById('chat-revoked-warning'),
     publicBadge: document.getElementById('chat-public-unread'),
     directBadge: document.getElementById('chat-direct-unread'),
+    replyBar: document.getElementById('chat-reply-bar'),
+    replyName: document.getElementById('chat-reply-name'),
+    replyText: document.getElementById('chat-reply-text'),
+    replyCancel: document.getElementById('chat-reply-cancel'),
     onNotice: msg => showToast(msg)
   });
 
