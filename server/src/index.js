@@ -120,6 +120,19 @@ authService.linkSuffix = () => {
 };
 
 const roomManager = new RoomManager(authService.roomId);
+
+// For the panel's "All users" row: each permission's global value, and whether anyone differs from it
+function allUsersPermissions() {
+  const invited = authService.getInvitedPermissions();
+  const people = [
+    ...Object.values(authService.permissionOverrides),
+    ...[...roomManager.participants.values()].filter(u => u.role !== Role.ADMIN).map(u => u.permissions)
+  ];
+  return Object.fromEntries(PERMISSION_KEYS.map(key => [key, {
+    on: invited[key],
+    mixed: people.some(perms => key in perms && perms[key] !== invited[key])
+  }]));
+}
 // Kept in data/ so a restart (such as an update started from the panel) does not sign the admin out
 const adminSessions = new AdminSessions({
   secureCookie: TLS_ENABLED || String(publicBaseUrl).startsWith('https:'),
@@ -349,6 +362,7 @@ const server = (TLS_ENABLED ? https : http).createServer(async (req, res) => {
       network: { ...portAccess.report(), publicBaseUrl },
       release: (releaseWatcher.refreshIfOlderThan(PANEL_RECHECK_MS), releaseInfo()),
       chatHistory: { messages: chatHistory.count },
+      allUsers: allUsersPermissions(),
       serverStats: {
         uptime: process.uptime(),
         totalUsers: roomManager.participants.size
@@ -405,6 +419,24 @@ const server = (TLS_ENABLED ? https : http).createServer(async (req, res) => {
       const updated = roomManager.updatePermissions(user.id, permissions);
 
       return sendJson(res, 200, { success: true, permissions: updated });
+    } catch (err) {
+      return sendJson(res, 400, { error: err.message });
+    }
+  }
+
+  // One permission for all invited users at once
+  if (pathname === '/api/admin/permissions/all' && req.method === 'POST') {
+    try {
+      const body = await parseJsonBody(req);
+      if (!PERMISSION_KEYS.includes(body.permission) || typeof body.value !== 'boolean') {
+        return sendJson(res, 400, { error: 'Unknown permission' });
+      }
+      // Saved first, so a rejoin with the same link cannot win the permission back
+      authService.setGlobalPermission(body.permission, body.value);
+      for (const user of roomManager.participants.values()) {
+        if (user.role !== Role.ADMIN) roomManager.updatePermissions(user.id, { [body.permission]: body.value });
+      }
+      return sendJson(res, 200, { success: true, allUsers: allUsersPermissions() });
     } catch (err) {
       return sendJson(res, 400, { error: err.message });
     }

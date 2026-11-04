@@ -550,6 +550,13 @@ button { cursor: pointer; }
 .users-table tbody tr:hover { background: rgba(255, 255, 255, 0.025); }
 .users-table tbody tr.users-section:hover,
 .users-table tbody tr.users-section-empty:hover { background: transparent; }
+.all-users-row td { background: rgba(124, 108, 255, 0.07); }
+.users-table tbody tr.all-users-row:hover { background: transparent; }
+.all-users-avatar { background: var(--accent, #7c6cff); color: #fff; }
+.switch.is-mixed input + .slider,
+.switch.is-mixed input:checked + .slider { background: rgba(124, 108, 255, 0.35); border-color: var(--accent, #7c6cff); }
+.switch.is-mixed input + .slider::before,
+.switch.is-mixed input:checked + .slider::before { transform: translateX(8px); background: #fff; }
 .users-section td {
   padding-top: 0.75rem;
   padding-bottom: 0.55rem;

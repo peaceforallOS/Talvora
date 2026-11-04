@@ -36,6 +36,7 @@ class AuthService {
     this.createdAt = null;
     this.revokedUsers = Object.create(null); // canonical username -> time (ms) before which their links are void
     this.permissionOverrides = Object.create(null); // canonical username -> permissions the admin changed, kept across rejoins
+    this.globalPermissions = {}; // permissions the admin set for all invited users, in place of the defaults
     this.adminPassword = null; // { salt, hash } (scrypt) protecting the management panel
     this.setupToken = null; // one-time secret in the first-visit panel link; gone once a password is set
     this.configMtime = 0; // to notice changes made by `videocall-server reset-password`
@@ -108,6 +109,10 @@ class AuthService {
         }
       }
     }
+    if (data.globalPermissions && typeof data.globalPermissions === 'object') {
+      const known = Object.keys(createDefaultPermissions());
+      this.globalPermissions = Object.fromEntries(Object.entries(data.globalPermissions).filter(([key, value]) => known.includes(key) && typeof value === 'boolean'));
+    }
   }
 
   readConfigFile() {
@@ -153,6 +158,7 @@ class AuthService {
       createdAt: this.createdAt || (this.createdAt = new Date().toISOString()),
       revokedUsers: this.revokedUsers,
       permissionOverrides: this.permissionOverrides,
+      globalPermissions: this.globalPermissions,
       adminPassword: this.adminPassword,
       setupToken: this.setupToken
     };
@@ -296,6 +302,32 @@ class AuthService {
     }
   }
 
+  /**
+   * One permission for all invited users, at once: also for people not in the room and anyone invited
+   * later. Written onto everyone with a saved choice instead of removing theirs, so they follow it
+   * (and later changes per person still work).
+   */
+  setGlobalPermission(key, value) {
+    const previousGlobal = this.globalPermissions;
+    const previousOverrides = { ...this.permissionOverrides };
+    this.globalPermissions = { ...previousGlobal, [key]: value };
+    for (const [name, perms] of Object.entries(this.permissionOverrides)) {
+      this.permissionOverrides[name] = { ...perms, [key]: value };
+    }
+    try {
+      this.saveConfig();
+    } catch (err) {
+      this.globalPermissions = previousGlobal;
+      Object.assign(this.permissionOverrides, previousOverrides);
+      throw err;
+    }
+  }
+
+  // What an invited user without choices of their own has
+  getInvitedPermissions() {
+    return { ...createDefaultPermissions(false), ...this.globalPermissions };
+  }
+
   isUsernameRevoked(username) {
     return String(username || '').trim().toLowerCase() in this.revokedUsers;
   }
@@ -346,7 +378,7 @@ class AuthService {
       permissions.can_invite = true;
     }
     // Changes the admin made win over the defaults and the link's own invite flag (admins keep everything)
-    if (!isAdmin) Object.assign(permissions, this.permissionOverrides[String(payload.username).trim().toLowerCase()]);
+    if (!isAdmin) Object.assign(permissions, this.globalPermissions, this.permissionOverrides[String(payload.username).trim().toLowerCase()]);
 
     return {
       success: true,

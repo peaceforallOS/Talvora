@@ -8,6 +8,7 @@
   let participants = [];
   let refreshTimer = null;
   let lastSnapshot = null;
+  let allUsers = {}; // the "All users" row: permission -> { on, mixed }
 
   // DOM Elements
   const authOverlay = document.getElementById('auth-overlay');
@@ -225,7 +226,7 @@
       renderChatHistory(data.chatHistory);
 
       // Skip re-rendering when nothing changed, so polling doesn't reset the table mid-interaction
-      const snapshot = JSON.stringify([data.roomId, data.participants, Math.floor(Date.now() / 60000)]);
+      const snapshot = JSON.stringify([data.roomId, data.participants, data.allUsers, Math.floor(Date.now() / 60000)]);
       if (snapshot !== lastSnapshot) {
         lastSnapshot = snapshot;
         statRoomId.textContent = data.roomId;
@@ -234,6 +235,7 @@
         statCamsOn.textContent = data.participants.filter(u => u.mediaState?.video || u.mediaState?.screen).length;
 
         participants = data.participants;
+        allUsers = data.allUsers || {};
         renderUsersTable();
       }
 
@@ -465,6 +467,7 @@
           ? `${iconSvg('users')}No one is in the room right now.`
           : `${iconSvg('search')}No users match your search.`
       }</td></tr>`;
+      usersTbody.prepend(createAllUsersRow());
       return;
     }
 
@@ -474,6 +477,7 @@
     const audience = filtered.filter(u => !u.onStage);
 
     usersTbody.innerHTML = '';
+    usersTbody.appendChild(createAllUsersRow());
     if (onStage.length > 0 || !filter) {
       usersTbody.appendChild(createSectionRow('video', 'On stage', onStage.length));
       onStage.forEach(user => usersTbody.appendChild(createUserRow(user)));
@@ -562,6 +566,65 @@
       });
     });
   }
+
+  const PERMISSION_LABELS = { can_audio: 'Audio', can_video: 'Video', can_screen: 'Screen sharing', can_chat: 'Chat', can_invite: 'Inviting' };
+
+  // One switch per permission, for all invited users at once
+  function createAllUsersRow() {
+    const tr = document.createElement('tr');
+    tr.className = 'all-users-row';
+    const cell = key => {
+      const state = allUsers[key] || {};
+      const title = state.mixed ? `${PERMISSION_LABELS[key]}: some people differ` : `${PERMISSION_LABELS[key]} for all invited users`;
+      return `<td class="td-perm">
+        <label class="switch ${state.mixed ? 'is-mixed' : ''}" title="${title}">
+          <input type="checkbox" class="perm-all-toggle" data-perm="${key}" aria-label="${title}" ${state.on ? 'checked' : ''}>
+          <span class="slider"></span>
+        </label>
+      </td>`;
+    };
+    tr.innerHTML = `
+      <td>
+        <div class="user-cell">
+          <div class="avatar all-users-avatar">${iconSvg('users')}</div>
+          <div class="user-meta">
+            <span class="user-name">All users</span>
+            <span class="user-sub">Everyone invited, also later on</span>
+          </div>
+        </div>
+      </td>
+      <td></td>
+      ${['can_audio', 'can_video', 'can_screen', 'can_chat', 'can_invite'].map(cell).join('')}
+      <td></td>
+    `;
+    return tr;
+  }
+
+  usersTbody.addEventListener('change', async e => {
+    if (!e.target.classList.contains('perm-all-toggle')) return;
+    const permission = e.target.getAttribute('data-perm');
+    const value = e.target.checked;
+    const label = PERMISSION_LABELS[permission];
+    if (!confirm(`Turn ${label} ${value ? 'on' : 'off'} for all invited users?\n\nThis replaces any choice made for one person, also for people not in the room, and applies to anyone who joins later. You can still change one person afterwards. The admin always keeps it.`)) {
+      e.target.checked = !value;
+      return;
+    }
+    try {
+      const res = await adminPost('/api/admin/permissions/all', { permission, value });
+      if (res.ok) {
+        showToast(`${label} turned ${value ? 'on' : 'off'} for all invited users`);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        showToast(data.error || 'Could not change the permission for everyone');
+        e.target.checked = !value;
+      }
+    } catch (err) {
+      showToast('Network error changing the permission');
+      e.target.checked = !value;
+    }
+    lastSnapshot = null;
+    fetchRoomInfo();
+  });
 
   function createSectionRow(icon, title, count) {
     const tr = document.createElement('tr');

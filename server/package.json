@@ -1,12 +1,12 @@
 {
   "name": "videocall-server",
-  "version": "1.18.0",
+  "version": "1.19.0",
   "description": "Talvora server: call relay and management panel for Linux",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
     "reset-password": "node src/resetAdminPassword.js",
-    "test": "node test/server.test.js && node test/chatHistory.test.js && node test/admin_panel.test.js && node test/hardening.test.js && node test/turn.test.js && node test/certManager.test.js && node test/portAccess.test.js && node test/releases.test.js"
+    "test": "node test/server.test.js && node test/chatHistory.test.js && node test/globalPermissions.test.js && node test/admin_panel.test.js && node test/hardening.test.js && node test/turn.test.js && node test/certManager.test.js && node test/portAccess.test.js && node test/releases.test.js"
   },
   "dependencies": {
     "acme-client": "^5.4.0",

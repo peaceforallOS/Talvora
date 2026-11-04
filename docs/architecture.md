@@ -295,6 +295,11 @@ Each user entity in the room state contains a `permissions` object (an invited u
 - When `can_audio` is `false`, the server keeps the user's announced audio off and the client mutes its input.
 - When `can_video` is `false`, the server keeps the announced video off and the client closes the camera.
 - When `can_screen` is `false`, the server keeps the announced screen sharing off and the client stops any screen share.
+- **All users** (`POST /api/admin/permissions/all`, `{ permission, value }`): the panel's top row sets one permission for all
+  invited users. It is saved as `globalPermissions` in place of that default, written onto every saved per-person choice,
+  and applied to everyone in the room. People who join later get it; one person can still be changed afterwards, and a
+  later global change replaces that. Choices are overwritten rather than removed, because a saved `can_video` without
+  `can_screen` means screen sharing was allowed (settings from before 1.10.0). The panel shows a switch as mixed when anyone differs.
 - The management panel lists participants in two groups by `onStage`: **On stage** (the admin first) and **Audience**. It refreshes from `/api/admin/info` every 1.5 seconds, so people move as the admin brings them up.
 - When `can_chat` is set to `false`, client disables the chat input box with a clear banner. Saved messages stay readable.
 - When `can_invite` is set to `true` by Admin, the user's client automatically reveals the "Invite" button.
