@@ -1206,6 +1206,22 @@ input[type="range"]::-moz-range-thumb {
 }
 .chip:hover { border-color: rgba(255, 255, 255, 0.25); }
 .chip.selected { background: var(--accent); border-color: var(--accent); color: #fff; }
+.chip.away { border-style: dashed; color: var(--text-muted); }
+.chip.away.selected { color: #fff; }
+
+.unread-count {
+  display: inline-block;
+  min-width: 16px;
+  margin-left: 0.35rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
 
 .chat-messages-container {
   flex: 1;
@@ -1219,7 +1235,7 @@ input[type="range"]::-moz-range-thumb {
   scrollbar-color: var(--surface-3) transparent;
 }
 .chat-messages-container:empty::before {
-  content: "No messages yet.\A Say hello to the room 👋";
+  content: attr(data-empty);
   white-space: pre;
   margin: auto;
   text-align: center;

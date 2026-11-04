@@ -258,6 +258,13 @@ and reusing a removed person's username gives access to that name's direct messa
 (`POST /api/admin/chat/clear`) deletes the file and sends `chat_cleared` to the room; the panel only sees the number of
 messages, never their text.
 
+The client (`client/src/chat.js`) keeps all of it in one list and shows only the open view: **Everyone** the public
+messages, **Direct** the messages with the person chosen. Conversations go by username, so they survive the other
+person rejoining with a new connection id, and anyone with a conversation stays listed after leaving; only people in
+the room can be sent to. Unread messages are counted per person; what has been read is kept on this computer in
+`localStorage`, per server and username, as the time of the last message read in each conversation, because the
+server does not track it. Old public messages never count as unread when joining.
+
 ---
 
 ## 4. Permission Model & Management Schema

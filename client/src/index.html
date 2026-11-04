@@ -194,8 +194,8 @@
           <div id="panel-chat" class="panel-content active-panel">
             <div class="chat-mode-selector">
               <div class="mode-seg" role="tablist" aria-label="Message type">
-                <button type="button" class="mode-seg-btn active" data-mode="public"><svg class="icon"><use href="#i-globe"/></svg>Everyone</button>
-                <button type="button" class="mode-seg-btn" data-mode="direct"><svg class="icon"><use href="#i-lock"/></svg>Direct</button>
+                <button type="button" class="mode-seg-btn active" data-mode="public"><svg class="icon"><use href="#i-globe"/></svg>Everyone<span id="chat-public-unread" class="unread-count hidden"></span></button>
+                <button type="button" class="mode-seg-btn" data-mode="direct"><svg class="icon"><use href="#i-lock"/></svg>Direct<span id="chat-direct-unread" class="unread-count hidden"></span></button>
               </div>
               <!-- Source of truth read by chat.js; driven by the segmented control above -->
               <select id="select-chat-mode" class="hidden" aria-hidden="true" tabindex="-1">

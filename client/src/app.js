@@ -234,6 +234,8 @@
     recipientsList: document.getElementById('recipients-list'),
     unreadBadge: document.getElementById('chat-unread-badge'),
     revokedBanner: document.getElementById('chat-revoked-warning'),
+    publicBadge: document.getElementById('chat-public-unread'),
+    directBadge: document.getElementById('chat-direct-unread'),
     onNotice: msg => showToast(msg)
   });
 
@@ -1043,6 +1045,7 @@
     tabUsers.classList.remove('active');
     panelChat.classList.add('active-panel');
     panelUsers.classList.remove('active-panel');
+    chatController.isChatTabActive = true;
     chatController.markRead();
     chatController.onChatShown();
   });
@@ -1052,6 +1055,7 @@
     tabChat.classList.remove('active');
     panelUsers.classList.add('active-panel');
     panelChat.classList.remove('active-panel');
+    chatController.isChatTabActive = false;
   });
 
   btnLeaveRoom.addEventListener('click', () => {
