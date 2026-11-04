@@ -222,6 +222,7 @@
       statUptime.textContent = formatUptime(data.serverStats?.uptime || 0);
       renderNetwork(data.network);
       renderRelease(data.release);
+      renderChatHistory(data.chatHistory);
 
       // Skip re-rendering when nothing changed, so polling doesn't reset the table mid-interaction
       const snapshot = JSON.stringify([data.roomId, data.participants, Math.floor(Date.now() / 60000)]);
@@ -372,6 +373,33 @@
   const networkPorts = document.getElementById('network-ports');
   const btnNetworkRetry = document.getElementById('btn-network-retry');
   let lastNetwork = null;
+
+  const chatHistorySummary = document.getElementById('chat-history-summary');
+  const btnClearChat = document.getElementById('btn-clear-chat');
+  let clearingChat = false;
+
+  function renderChatHistory(chatHistory) {
+    const count = chatHistory?.messages || 0;
+    chatHistorySummary.textContent = count
+      ? `${count} saved ${count === 1 ? 'message' : 'messages'}, public and direct. People see them again when they join, also after a restart or update.`
+      : 'No saved messages.';
+    btnClearChat.disabled = !count || clearingChat;
+  }
+
+  btnClearChat.addEventListener('click', async () => {
+    if (!confirm('Clear the whole chat history?\n\nAll public and direct messages are deleted for everyone, including people in the room right now. This cannot be undone.')) return;
+    clearingChat = true;
+    btnClearChat.disabled = true;
+    try {
+      const res = await adminPost('/api/admin/chat/clear', {});
+      const data = await res.json().catch(() => ({}));
+      showToast(res.ok ? 'Chat history cleared.' : (data.error || 'The chat history could not be cleared.'));
+    } catch (err) {
+      showToast('Network error clearing the chat history');
+    }
+    clearingChat = false;
+    fetchRoomInfo();
+  });
 
   const PORT_STATES = {
     forwarded: ['Open', 'is-open'],

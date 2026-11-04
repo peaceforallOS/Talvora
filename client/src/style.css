@@ -1228,6 +1228,64 @@ input[type="range"]::-moz-range-thumb {
   line-height: 1.6;
 }
 
+.chat-row {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+.chat-row.outgoing { flex-direction: row-reverse; }
+.chat-row.from-history .chat-bubble { animation: none; }
+
+.chat-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+}
+.chat-row:hover .chat-copy-btn,
+.chat-copy-btn:focus-visible,
+.chat-copy-btn.copied { opacity: 1; }
+.chat-copy-btn:hover { background: var(--surface-3); color: var(--text); }
+.chat-copy-btn.copied { color: var(--success, #34d399); }
+
+.chat-menu {
+  position: fixed;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  padding: 0.3rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-solid);
+  box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.6);
+}
+.chat-menu button {
+  padding: 0.42rem 0.65rem;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.82rem;
+  text-align: left;
+  cursor: pointer;
+}
+.chat-menu button:hover:not(:disabled) { background: var(--surface-3); }
+.chat-menu button:disabled { color: var(--text-faint); cursor: default; }
+
 .chat-bubble {
   max-width: 85%;
   padding: 0.55rem 0.8rem 0.6rem;
@@ -1242,13 +1300,11 @@ input[type="range"]::-moz-range-thumb {
   to { opacity: 1; transform: none; }
 }
 .chat-bubble.incoming {
-  align-self: flex-start;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-bottom-left-radius: 5px;
 }
 .chat-bubble.outgoing {
-  align-self: flex-end;
   background: var(--accent-gradient);
   color: #fff;
   border-bottom-right-radius: 5px;

@@ -11,6 +11,8 @@ class ClientCore {
     this.onRoomState = options.onRoomState || (() => {});
     this.onPermissionsUpdated = options.onPermissionsUpdated || (() => {});
     this.onChatMessage = options.onChatMessage || (() => {});
+    this.onChatHistory = options.onChatHistory || (() => {}); // (messages): saved messages, sent on every join
+    this.onChatCleared = options.onChatCleared || (() => {}); // the admin cleared the chat history
     this.onInviteGenerated = options.onInviteGenerated || (() => {});
     this.onKicked = options.onKicked || (() => {});
     this.onConnectionStatus = options.onConnectionStatus || (() => {});
@@ -292,6 +294,14 @@ class ClientCore {
       // 7. Chat Delivered
       case 'chat_deliver':
         this.onChatMessage(msg.message);
+        break;
+
+      case 'chat_history':
+        this.onChatHistory(msg.messages || []);
+        break;
+
+      case 'chat_cleared':
+        this.onChatCleared();
         break;
 
       // 8. Invite Generated

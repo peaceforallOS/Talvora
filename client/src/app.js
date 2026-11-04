@@ -180,7 +180,14 @@
       applyPermissionsToUI(perms);
     },
     onChatMessage: msg => {
-      chatController.receiveMessage(msg, clientCore.currentUser?.id);
+      chatController.receiveMessage(msg, clientCore.currentUser?.username);
+    },
+    onChatHistory: messages => {
+      chatController.loadHistory(messages, clientCore.currentUser?.username);
+    },
+    onChatCleared: () => {
+      chatController.clearMessages();
+      showToast('The admin cleared the chat history.');
     },
     onInviteGenerated: data => {
       inviteBoundName.textContent = data.username;
@@ -1003,6 +1010,7 @@
     chatController.isPanelOpen = open;
     if (open && tabChat.classList.contains('active')) {
       chatController.markRead();
+      chatController.onChatShown();
     }
   }
 
@@ -1032,6 +1040,7 @@
     panelChat.classList.add('active-panel');
     panelUsers.classList.remove('active-panel');
     chatController.markRead();
+    chatController.onChatShown();
   });
 
   tabUsers.addEventListener('click', () => {

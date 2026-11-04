@@ -11,7 +11,10 @@ const { MessageType, Role, generateToken } = require('../../shared/protocol');
 process.env.PORT = '8098';
 // Use a throwaway server config, never the real one
 process.env.VIDEOCALL_CONFIG = require('path').join(require('os').tmpdir(), `videocall-test-${process.pid}.json`);
-process.on('exit', () => require('fs').rmSync(process.env.VIDEOCALL_CONFIG, { force: true }));
+process.on('exit', () => {
+  require('fs').rmSync(process.env.VIDEOCALL_CONFIG, { force: true });
+  require('fs').rmSync(require('path').join(require('os').tmpdir(), 'chat-history.jsonl'), { force: true });
+});
 const { server, authService, roomManager, adminSessions } = require('../src/index');
 // Admin API calls in these tests use a signed-in panel session
 const ADMIN_COOKIE = adminSessions.create().cookie.split(';')[0];

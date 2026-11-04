@@ -10,7 +10,10 @@ const { MessageType, Role, ChatMode } = require('../../shared/protocol');
 process.env.PORT = '8099';
 // Use a throwaway server config, never the real one
 process.env.VIDEOCALL_CONFIG = require('path').join(require('os').tmpdir(), `videocall-test-${process.pid}.json`);
-process.on('exit', () => require('fs').rmSync(process.env.VIDEOCALL_CONFIG, { force: true }));
+process.on('exit', () => {
+  require('fs').rmSync(process.env.VIDEOCALL_CONFIG, { force: true });
+  require('fs').rmSync(require('path').join(require('os').tmpdir(), 'chat-history.jsonl'), { force: true });
+});
 const { server, authService, roomManager } = require('../src/index');
 
 const WS_URL = 'ws://localhost:8099';

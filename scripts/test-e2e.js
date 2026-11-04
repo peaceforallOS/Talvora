@@ -11,7 +11,10 @@ const fs = require('fs');
 process.env.PORT = '8090';
 // Use a throwaway server config, never the real one
 process.env.VIDEOCALL_CONFIG = require('path').join(require('os').tmpdir(), `videocall-e2e-${process.pid}.json`);
-process.on('exit', () => require('fs').rmSync(process.env.VIDEOCALL_CONFIG, { force: true }));
+process.on('exit', () => {
+  require('fs').rmSync(process.env.VIDEOCALL_CONFIG, { force: true });
+  require('fs').rmSync(require('path').join(require('os').tmpdir(), 'chat-history.jsonl'), { force: true });
+});
 const { WebSocket } = require('../server/node_modules/ws');
 global.WebSocket = WebSocket;
 

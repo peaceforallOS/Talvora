@@ -215,9 +215,20 @@ m-line: they receive the shared sound as a second audio track of the person's st
 | `user_left` | `{ userId: string, reason: string }` | Notifies user departure or kick. |
 | `permissions_updated`| `{ userId: string, permissions: {...} }` | Real-time push when admin toggles permissions. |
 | `chat_message` | `{ id, senderId, senderName, mode, recipients, text, timestamp }` | Delivered chat message. |
+| `chat_history` | `{ messages: [...] }` | Sent right after `auth_success` on every join: the saved messages this person may see. Replaces what the client shows. |
+| `chat_cleared` | `{}` | The admin cleared the chat history; clients empty their chat. |
 | `kick` | `{ reason: string }` | Force disconnection notice. |
 | `room_notice` | `{ message: string }` | Room news shown to everyone (the admin left / is back). |
 | `room_state` `stage_changed` / `hand_changed` | `{ userId, onStage?, handRaised, mediaState? }` | Someone came on stage, went back to the audience, or raised / lowered a hand. |
+
+#### Chat history
+`server/src/chatHistory.js` appends every delivered message to `data/chat-history.jsonl` (mode 0600, one JSON message
+per line, not encrypted; the installer and updater never touch `data/`). It keeps the newest 5,000 messages. On every
+join the server sends `chat_history`: all public messages, plus direct messages this person sent or received, matched
+by username because connection ids change per session. A newly invited person therefore sees earlier public messages,
+and reusing a removed person's username gives access to that name's direct messages. The panel's **Clear chat history**
+(`POST /api/admin/chat/clear`) deletes the file and sends `chat_cleared` to the room; the panel only sees the number of
+messages, never their text.
 
 ---
 
@@ -245,7 +256,7 @@ Each user entity in the room state contains a `permissions` object (an invited u
 - When `can_audio` is `false`, the server keeps the user's announced audio off and the client mutes its input.
 - When `can_video` is `false`, the server keeps the announced video off and the client closes the camera.
 - When `can_screen` is `false`, the server keeps the announced screen sharing off and the client stops any screen share.
-- When `can_chat` is set to `false`, client disables the chat input box with a clear banner.
+- When `can_chat` is set to `false`, client disables the chat input box with a clear banner. Saved messages stay readable.
 - When `can_invite` is set to `true` by Admin, the user's client automatically reveals the "Invite" button.
 
 ---
@@ -381,7 +392,7 @@ Video_Call_88/
 │   ├── test/                   # Client integration tests (npm test)
 │   └── package.json
 ├── server/                     # Linux server edition & relay
-│   ├── src/                    # index.js (HTTP(S) + WebSocket), auth.js, adminSession.js, certManager.js, portAccess.js, releases.js, roomManager.js, turnServer.js
+│   ├── src/                    # index.js (HTTP(S) + WebSocket), auth.js, adminSession.js, certManager.js, chatHistory.js, portAccess.js, releases.js, roomManager.js, turnServer.js
 │   ├── public/                 # Admin management panel
 │   ├── stubs/                  # Empty stand-ins for log4js and js-yaml: node-turn lists them only for its own
 │   │                           #   command-line starter, which the server never runs (see "overrides" in package.json)

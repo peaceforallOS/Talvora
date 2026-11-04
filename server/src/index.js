@@ -12,6 +12,7 @@ const AuthService = require('./auth');
 const RoomManager = require('./roomManager');
 const TurnRelay = require('./turnServer');
 const AdminSessions = require('./adminSession');
+const ChatHistory = require('./chatHistory');
 const CertManager = require('./certManager');
 const PortAccess = require('./portAccess');
 const { spawn } = require('child_process');
@@ -124,6 +125,8 @@ const adminSessions = new AdminSessions({
   secureCookie: TLS_ENABLED || String(publicBaseUrl).startsWith('https:'),
   file: path.join(DATA_DIR, 'admin-sessions.json')
 });
+// Kept in data/ so public and direct messages survive restarts and updates
+const chatHistory = new ChatHistory({ file: path.join(DATA_DIR, 'chat-history.jsonl') });
 // New Talvora releases on GitHub, shown in the management panel (installed servers; RELEASE_CHECK=on elsewhere)
 const releaseWatcher = new ReleaseWatcher();
 const RELEASE_CHECK = process.env.RELEASE_CHECK ? process.env.RELEASE_CHECK === 'on' : !LOCAL_ONLY;
@@ -345,6 +348,7 @@ const server = (TLS_ENABLED ? https : http).createServer(async (req, res) => {
       participants: roomManager.getAllPublicUsers(),
       network: { ...portAccess.report(), publicBaseUrl },
       release: (releaseWatcher.refreshIfOlderThan(PANEL_RECHECK_MS), releaseInfo()),
+      chatHistory: { messages: chatHistory.count },
       serverStats: {
         uptime: process.uptime(),
         totalUsers: roomManager.participants.size
@@ -441,6 +445,17 @@ const server = (TLS_ENABLED ? https : http).createServer(async (req, res) => {
     } catch (err) {
       return sendJson(res, 400, { error: err.message });
     }
+  }
+
+  // Deletes every saved public and direct message, and empties the chat of everyone in the room
+  if (pathname === '/api/admin/chat/clear' && req.method === 'POST') {
+    try {
+      chatHistory.clear();
+    } catch (err) {
+      return sendJson(res, 500, { error: `The chat history could not be deleted: ${err.message}` });
+    }
+    roomManager.broadcast({ type: MessageType.CHAT_CLEARED });
+    return sendJson(res, 200, { success: true });
   }
 
   // Ask the router again to forward the server's ports
@@ -602,6 +617,10 @@ wss.on('connection', (ws, req) => {
         },
         iceServers: turnRelay.getIceServers(req.headers.host, currentUser.id)
       }));
+      ws.send(JSON.stringify({
+        type: MessageType.CHAT_HISTORY,
+        messages: chatHistory.visibleTo(currentUser.username)
+      }));
       return;
     }
 
@@ -696,6 +715,7 @@ wss.on('connection', (ws, req) => {
           senderUsername: currentUser.username,
           mode,
           recipients,
+          recipientUsernames: mode === ChatMode.DIRECT && recipients[0] ? [roomManager.getParticipant(recipients[0]).username] : [],
           text: text.trim(),
           timestamp: Date.now()
         }
@@ -703,11 +723,13 @@ wss.on('connection', (ws, req) => {
 
       if (mode === ChatMode.PUBLIC) {
         // Broadcast to everyone in the room
+        chatHistory.add(chatPayload.message);
         roomManager.broadcast(chatPayload);
       } else if (mode === ChatMode.DIRECT) {
         // Direct to target recipient and echo back to sender
         const targetId = recipients[0];
         if (targetId) {
+          chatHistory.add(chatPayload.message);
           roomManager.sendTo(targetId, chatPayload);
           ws.send(JSON.stringify(chatPayload));
         }

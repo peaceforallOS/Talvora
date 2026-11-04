@@ -24,6 +24,8 @@ const MessageType = {
   ROOM_STATE: 'room_state',
   PERMISSIONS_UPDATED: 'permissions_updated',
   CHAT_DELIVER: 'chat_deliver',
+  CHAT_HISTORY: 'chat_history', // { messages }: saved messages this person may see, sent on joining
+  CHAT_CLEARED: 'chat_cleared', // the admin cleared the chat history in the management panel
   INVITE_GENERATED: 'invite_generated',
   KICKED: 'kicked',
   ROOM_NOTICE: 'room_notice' // { message }: shown to everyone (e.g. the admin left / is back)
